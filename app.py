@@ -22,10 +22,14 @@ from core_models.dinov2_auth_model import DINOv2AuthModel
 from core_models.efficientnet_auth_model import EfficientNetAuthModel
 from core_models.face_deepfake_model import FaceDeepfakeModel
 
+from transformers import ViTForImageClassification, ViTImageProcessor
+
 # -------- Config --------
 MODELS_DIR = os.path.join(ROOT_DIR, "models")
-WEIGHTS = {"dino": 0.4, "efficientnet": 0.35, "face": 0.25}
-HIGH_CONFIDENCE_OVERRIDE = 0.9
+WEIGHTS = {"dino": 0.20, "efficientnet": 0.20, "face": 0.20, "vit": 0.40}
+WEIGHTS_FACE_BOOSTED = {"dino": 0.15, "efficientnet": 0.15, "face": 0.30, "vit": 0.40}
+HIGH_CONFIDENCE_OVERRIDE = 0.65
+VIT_MODEL_ID = "prithivMLmods/Deep-Fake-Detector-v2-Model"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -62,6 +66,19 @@ dino_model = try_load_model("DINOv2", DINOv2AuthModel, "dinov2_auth_model.pth")
 eff_model = try_load_model("EfficientNet", EfficientNetAuthModel, "efficientnet_auth_model.pth")
 face_model = try_load_model("Face Deepfake", FaceDeepfakeModel, "image_face_model.pth")
 
+# Load pre-trained ViT deepfake detector from HuggingFace
+vit_model = None
+vit_processor = None
+try:
+    os.environ["HF_HOME"] = os.path.join(ROOT_DIR, ".hf_cache")
+    vit_model = ViTForImageClassification.from_pretrained(VIT_MODEL_ID).to(device)
+    vit_processor = ViTImageProcessor.from_pretrained(VIT_MODEL_ID)
+    vit_model.eval()
+    loaded_models.append("ViT Deepfake Detector")
+except Exception as e:
+    print(f"Warning: Could not load ViT model: {e}")
+    missing_models.append("ViT Deepfake Detector")
+
 if loaded_models:
     print(f"Loaded models: {', '.join(loaded_models)}")
 if missing_models:
@@ -84,6 +101,7 @@ def analyze_image(image):
         dino_prob = 0.0
         eff_prob = 0.0
         face_prob = 0.0
+        vit_prob = 0.0
         has_face = False
         active_models = 0
 
@@ -102,6 +120,15 @@ def analyze_image(image):
                 face_prob = 1.0 - real_prob
                 active_models += 1
 
+            if vit_model is not None and vit_processor is not None:
+                vit_inputs = vit_processor(images=image.convert("RGB"), return_tensors="pt").to(device)
+                vit_outputs = vit_model(**vit_inputs)
+                vit_probs = torch.softmax(vit_outputs.logits, dim=1)
+                # index 1 = "Deepfake" class
+                deepfake_idx = [k for k, v in vit_model.config.id2label.items() if "fake" in v.lower() or "deep" in v.lower()]
+                vit_prob = vit_probs[0][deepfake_idx[0]].item() if deepfake_idx else vit_probs[0][1].item()
+                active_models += 1
+
         if active_models == 0:
             status = "No trained models found. Please train models first."
             details = "Run the training scripts to generate model weights:\n"
@@ -110,24 +137,30 @@ def analyze_image(image):
             details += "  python training/train_face_image.py"
             return status, details, "", None
 
-        # Weighted ensemble
+        # Weighted ensemble — boost face model when it detects a fake face
+        use_boosted = has_face and face_model is not None and face_prob > 0.6
+        w = WEIGHTS_FACE_BOOSTED if use_boosted else WEIGHTS
+
         total_weight = 0.0
         weighted_sum = 0.0
 
         if dino_model is not None:
-            weighted_sum += WEIGHTS["dino"] * dino_prob
-            total_weight += WEIGHTS["dino"]
+            weighted_sum += w["dino"] * dino_prob
+            total_weight += w["dino"]
         if eff_model is not None:
-            weighted_sum += WEIGHTS["efficientnet"] * eff_prob
-            total_weight += WEIGHTS["efficientnet"]
+            weighted_sum += w["efficientnet"] * eff_prob
+            total_weight += w["efficientnet"]
         if has_face and face_model is not None:
-            weighted_sum += WEIGHTS["face"] * face_prob
-            total_weight += WEIGHTS["face"]
+            weighted_sum += w["face"] * face_prob
+            total_weight += w["face"]
+        if vit_model is not None:
+            weighted_sum += w["vit"] * vit_prob
+            total_weight += w["vit"]
 
         final_risk = weighted_sum / total_weight if total_weight > 0 else 0.0
 
         # High-confidence override
-        max_prob = max(dino_prob, eff_prob, face_prob)
+        max_prob = max(dino_prob, eff_prob, face_prob, vit_prob)
         if max_prob > HIGH_CONFIDENCE_OVERRIDE:
             final_risk = max(final_risk, max_prob)
 
@@ -158,6 +191,11 @@ def analyze_image(image):
                 details_lines.append(f"Face Fake Score    : N/A (model not trained)")
         else:
             details_lines.append(f"Face Fake Score    : N/A (no face detected)")
+
+        if vit_model is not None:
+            details_lines.append(f"ViT Deepfake Score : {vit_prob:.4f}")
+        else:
+            details_lines.append(f"ViT Deepfake Score : N/A (model not loaded)")
 
         details_lines.append("")
         details_lines.append(f"Final Risk Score   : {final_risk:.4f}")
@@ -406,9 +444,9 @@ with gr.Blocks() as demo:
 
     gr.Markdown("---")
     gr.Markdown(
-        "**Models:** DINOv2 (weight: 40%) | EfficientNet V2 (weight: 35%) | "
-        "Face Deepfake ResNet50 (weight: 25%) | "
-        "High-confidence override at >90%"
+        "**Models:** ViT Deepfake Detector (40%) | DINOv2 (20%) | EfficientNet V2 (20%) | "
+        "Face Deepfake ResNet50 (20%) | "
+        "High-confidence override at >75%"
     )
 
 if __name__ == "__main__":
