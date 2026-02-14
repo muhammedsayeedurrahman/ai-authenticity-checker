@@ -30,8 +30,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Claude Code
-.claude/
 
 # Temp files
 *.tmp
