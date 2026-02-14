@@ -249,48 +249,62 @@ def _generate_gradcam_video(video_path, fps):
     if info is None:
         return None
 
-    frame_w, frame_h = 300, 300
-    canvas_w = frame_w * 2 + 10  # gap between
-    label_h = 35
+    import imageio
+
+    frame_w, frame_h = 400, 400
+    gap = 6
+    canvas_w = frame_w * 2 + gap
+    label_h = 40
     canvas_h = frame_h + label_h
 
     tmp_out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
     tmp_out.close()
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out_fps = max(1, int(fps))
-    writer = cv2.VideoWriter(tmp_out.name, fourcc, out_fps, (canvas_w, canvas_h))
+    writer = imageio.get_writer(
+        tmp_out.name, fps=out_fps, codec="libx264",
+        output_params=["-pix_fmt", "yuv420p"],
+    )
 
     font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.75
+    thickness = 2
+    text_color = (0, 0, 0)  # Black text on white bg
+
+    label_left = "Manipulated Video"
+    label_right = "AI Auth Checker output"
+    left_size = cv2.getTextSize(label_left, font, font_scale, thickness)[0]
+    right_size = cv2.getTextSize(label_right, font, font_scale, thickness)[0]
 
     for frame_idx, pil_img, timestamp in extract_frames(video_path, fps=fps):
         # Generate heatmap
         tensor = _preprocess(pil_img.convert("RGB")).unsqueeze(0).to(device)
         heatmap = get_gradcam_for_face_model(face_model, tensor)
-        overlay_pil = create_heatmap_overlay(pil_img, heatmap)
+        overlay_pil = create_heatmap_overlay(pil_img, heatmap, alpha=0.45)
 
         # Resize both
         original = np.array(pil_img.convert("RGB").resize((frame_w, frame_h)))
         overlay = np.array(overlay_pil.resize((frame_w, frame_h)))
 
-        # Build canvas
-        canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
+        # Build canvas (white background)
+        canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
 
-        # Labels
-        cv2.putText(canvas, "Manipulated Video", (frame_w // 2 - 90, 25),
-                     font, 0.6, (255, 255, 255), 2)
-        cv2.putText(canvas, "Detection Output", (frame_w + 10 + frame_w // 2 - 80, 25),
-                     font, 0.6, (255, 255, 255), 2)
+        # Labels (centered, black text)
+        cv2.putText(canvas, label_left,
+                     (frame_w // 2 - left_size[0] // 2, 28),
+                     font, font_scale, text_color, thickness)
+        cv2.putText(canvas, label_right,
+                     (frame_w + gap + frame_w // 2 - right_size[0] // 2, 28),
+                     font, font_scale, text_color, thickness)
 
         # Place frames
         canvas[label_h:, :frame_w] = original
-        canvas[label_h:, frame_w + 10:] = overlay
+        canvas[label_h:, frame_w + gap:] = overlay
 
-        # Convert RGB to BGR for OpenCV
-        canvas_bgr = cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR)
-        writer.write(canvas_bgr)
+        # imageio expects RGB directly
+        writer.append_data(canvas)
 
-    writer.release()
+    writer.close()
     return tmp_out.name
 
 
