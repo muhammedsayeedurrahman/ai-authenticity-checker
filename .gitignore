@@ -1,0 +1,38 @@
+# Model weights (too large for git)
+models/*.pth
+models/face_detector/*.caffemodel
+
+# HuggingFace cache
+.hf_cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Temp files
+*.tmp
+*.log
