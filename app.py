@@ -16,7 +16,7 @@ from PIL import Image
 from utils.explainability import explain_risk
 from utils.gradcam import generate_gradcam_image, get_gradcam_for_face_model, create_heatmap_overlay, _preprocess
 from pipeline.face_gate import face_present
-from pipeline.video_analyzer import analyze_video, extract_frames, get_video_info
+from pipeline.video_analyzer import VideoAnalyzer, extract_frames, get_video_info
 
 from core_models.dinov2_auth_model import DINOv2AuthModel
 from core_models.efficientnet_auth_model import EfficientNetAuthModel
@@ -128,6 +128,16 @@ if loaded_models:
     print(f"Loaded models: {', '.join(loaded_models)}")
 if missing_models:
     print(f"Missing model weights (train first): {', '.join(missing_models)}")
+
+# -------- Video Analyzer Instance --------
+video_analyzer_instance = VideoAnalyzer(
+    dino_model=dino_model,
+    eff_model=eff_model,
+    face_model=face_model,
+    device=device,
+    vit_model=vit_model,
+    vit_processor=vit_processor,
+)
 
 
 # -------- Image Prediction --------
@@ -276,12 +286,8 @@ def analyze_video_ui(video, fps, aggregation, progress=gr.Progress()):
     def progress_callback(current, total, message):
         progress(current / max(total, 1), desc=message)
 
-    result = analyze_video(
+    result = video_analyzer_instance.analyze(
         video_path=video,
-        dino_model=dino_model,
-        eff_model=eff_model,
-        face_model=face_model,
-        device=device,
         fps=fps,
         aggregation=aggregation,
         progress_callback=progress_callback,
@@ -299,6 +305,7 @@ def analyze_video_ui(video, fps, aggregation, progress=gr.Progress()):
 
     # Summary details
     info = result["video_info"]
+    temporal = result.get("temporal_summary", {})
     lines = []
     lines.append(f"Video Duration     : {info['duration_sec']}s ({info['width']}x{info['height']} @ {info['fps']:.1f} fps)")
     lines.append(f"Frames Analyzed    : {result['total_frames_analyzed']}")
@@ -310,18 +317,31 @@ def analyze_video_ui(video, fps, aggregation, progress=gr.Progress()):
     lines.append("")
     lines.append(f"Average Risk Score : {result['avg_risk']:.4f}")
     lines.append(f"Active Models      : {', '.join(loaded_models) if loaded_models else 'None'}")
+    lines.append("")
+    lines.append("--- Temporal Analysis ---")
+    lines.append(f"Score Variance     : {temporal.get('overall_variance', 0):.6f}")
+    lines.append(f"Max Frame Jump     : {temporal.get('max_frame_jump', 0):.4f}")
+    lines.append(f"Significant Jumps  : {temporal.get('total_significant_jumps', 0)}")
 
     details = "\n".join(lines)
 
-    # Per-frame breakdown
+    # Per-frame breakdown with frequency and temporal columns
     frame_lines = []
-    frame_lines.append(f"{'Frame':<7} {'Time':>6} {'Risk':>7} {'Pred':>6} {'Face':>5} {'DINO':>7} {'EffNet':>7} {'FaceM':>7}")
-    frame_lines.append("-" * 65)
+    header = (
+        f"{'Frame':<6} {'Time':>5} {'Risk':>6} {'Pred':>5} {'Face':>4} "
+        f"{'ViT':>6} {'Freq':>6} {'Forns':>6} {'FaceM':>6} {'DINO':>6} {'Eff':>6} {'TAdj':>5}"
+    )
+    frame_lines.append(header)
+    frame_lines.append("-" * len(header))
     for fr in result["frame_results"]:
         frame_lines.append(
-            f"  {fr['frame_index']:<5} {fr['timestamp']:>5.1f}s {fr['frame_risk']:>6.4f} "
-            f"{fr['prediction']:>6} {'Y' if fr['has_face'] else 'N':>4}  "
-            f"{fr['dino_prob']:>6.4f} {fr['eff_prob']:>7.4f} {fr['face_prob']:>6.4f}"
+            f"{fr['frame_index']:<6} {fr['timestamp']:>4.1f}s "
+            f"{fr['frame_risk']:>5.3f} {fr['prediction']:>5} "
+            f"{'Y' if fr['has_face'] else 'N':>4} "
+            f"{fr['vit_prob']:>5.3f} {fr.get('frequency_prob', 0):>5.3f} "
+            f"{fr['forensic_prob']:>5.3f} {fr['face_prob']:>5.3f} "
+            f"{fr['dino_prob']:>5.3f} {fr['eff_prob']:>5.3f} "
+            f"{fr.get('temporal_adjustment', 0):>+.2f}"
         )
     frame_details = "\n".join(frame_lines)
 
@@ -510,13 +530,13 @@ with gr.Blocks(title="Proofyx") as demo:
                     input_video = gr.Video(label="Upload Video")
                     with gr.Row():
                         fps_slider = gr.Slider(
-                            minimum=0.5, maximum=5, value=1, step=0.5,
+                            minimum=0.5, maximum=10, value=6, step=0.5,
                             label="Sampling FPS",
-                            info="Frames per second to extract"
+                            info="Frames per second to extract (6 = every ~5th frame at 30fps)"
                         )
                         agg_method = gr.Dropdown(
-                            choices=["majority", "average", "max"],
-                            value="majority",
+                            choices=["weighted_avg", "majority", "average", "max"],
+                            value="weighted_avg",
                             label="Aggregation",
                             info="How to combine per-frame predictions"
                         )
@@ -541,8 +561,8 @@ with gr.Blocks(title="Proofyx") as demo:
 
     gr.HTML("""
     <div style="text-align:center; padding:16px 0 8px 0; color:#999; font-size:0.8rem;">
-        ViT Deepfake (35%) &bull; DINOv2 (15%) &bull; EfficientNet V2 (15%) &bull;
-        Face Deepfake (15%) &bull; Forensic Analysis (20%)
+        ViT Deepfake (30%) &bull; FFT Frequency (20%) &bull; Forensic Analysis (20%) &bull;
+        Face Deepfake (15%) &bull; DINOv2 (8%) &bull; EfficientNet V2 (7%) + Temporal Analysis
     </div>
     """)
 
