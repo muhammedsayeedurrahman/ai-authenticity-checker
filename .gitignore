@@ -1,5 +1,8 @@
 # Model weights (too large for git)
 models/*.pth
+models/*.keras
+models/*.onnx
+models/*.tflite
 models/face_detector/*.caffemodel
 
 # HuggingFace cache

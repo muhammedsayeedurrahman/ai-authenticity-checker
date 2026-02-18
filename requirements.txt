@@ -7,4 +7,8 @@ Pillow
 tqdm
 scikit-learn
 gradio
-clip @ git+https://github.com/openai/CLIP.git
+numpy
+imageio
+imageio-ffmpeg
+librosa
+soundfile

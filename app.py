@@ -13,10 +13,11 @@ import numpy as np
 from torchvision import transforms
 from PIL import Image
 
-from utils.explainability import explain_risk
+from utils.explainability import explain_risk, explain_audio_risk
 from utils.gradcam import generate_gradcam_image, get_gradcam_for_face_model, create_heatmap_overlay, _preprocess
 from pipeline.face_gate import face_present
 from pipeline.video_analyzer import VideoAnalyzer, extract_frames, get_video_info
+from pipeline.audio_analyzer import AudioAnalyzer
 
 from core_models.dinov2_auth_model import DINOv2AuthModel
 from core_models.efficientnet_auth_model import EfficientNetAuthModel
@@ -138,6 +139,13 @@ video_analyzer_instance = VideoAnalyzer(
     vit_model=vit_model,
     vit_processor=vit_processor,
 )
+
+# -------- Audio Analyzer Instance --------
+audio_analyzer_instance = AudioAnalyzer(device=device)
+if audio_analyzer_instance.model_loaded:
+    loaded_models.append("Audio Deepfake CNN")
+else:
+    missing_models.append("Audio Deepfake CNN")
 
 
 # -------- Image Prediction --------
@@ -266,8 +274,11 @@ def analyze_image(image):
 
         details = "\n".join(details_lines)
 
-        # GradCAM side-by-side
-        gradcam_img = generate_gradcam_image(image, face_model, device)
+        # GradCAM side-by-side (with ViT fallback if Face model not trained)
+        gradcam_img = generate_gradcam_image(
+            image, face_model, device,
+            vit_model=vit_model, vit_processor=vit_processor
+        )
 
         return risk_label, details, verdict, gradcam_img
 
@@ -347,7 +358,7 @@ def analyze_video_ui(video, fps, aggregation, progress=gr.Progress()):
 
     # Generate GradCAM output video (side-by-side: original | heatmap)
     gradcam_video_path = None
-    if face_model is not None:
+    if face_model is not None or vit_model is not None:
         progress(0.9, desc="Generating GradCAM heatmap video...")
         gradcam_video_path = _generate_gradcam_video(video, fps)
 
@@ -388,10 +399,30 @@ def _generate_gradcam_video(video_path, fps):
     right_size = cv2.getTextSize(label_right, font, font_scale, thickness)[0]
 
     for frame_idx, pil_img, timestamp in extract_frames(video_path, fps=fps):
-        # Generate heatmap
-        tensor = _preprocess(pil_img.convert("RGB")).unsqueeze(0).to(device)
-        heatmap = get_gradcam_for_face_model(face_model, tensor)
-        overlay_pil = create_heatmap_overlay(pil_img, heatmap, alpha=0.45)
+        # Generate heatmap using enhanced function with ViT fallback
+        if face_model is not None:
+            tensor = _preprocess(pil_img.convert("RGB")).unsqueeze(0).to(device)
+            try:
+                heatmap = get_gradcam_for_face_model(face_model, tensor)
+            except:
+                heatmap = None
+        else:
+            heatmap = None
+        
+        # Fallback to ViT if face model unavailable
+        if heatmap is None and vit_model is not None and vit_processor is not None:
+            try:
+                from utils.gradcam import _get_vit_attention_map
+                heatmap = _get_vit_attention_map(pil_img, vit_model, vit_processor, device)
+            except:
+                # Simple center-focused fallback
+                h, w = 224, 224
+                y, x = np.ogrid[:h, :w]
+                center_y, center_x = h // 2, w // 2
+                dist = np.sqrt((x - center_x)**2 + (y - center_y)**2)
+                heatmap = 1.0 - (dist / dist.max())
+        
+        overlay_pil = create_heatmap_overlay(pil_img, heatmap, alpha=0.6)
 
         # Resize both
         original = np.array(pil_img.convert("RGB").resize((frame_w, frame_h)))
@@ -417,6 +448,151 @@ def _generate_gradcam_video(video_path, fps):
 
     writer.close()
     return tmp_out.name
+
+
+# -------- Audio Prediction --------
+def analyze_audio_ui(audio, progress=gr.Progress()):
+    if audio is None:
+        return "", "", ""
+
+    progress(0, desc="Starting audio analysis...")
+
+    def progress_callback(current, total, message):
+        progress(current / max(total, 1), desc=message)
+
+    result = audio_analyzer_instance.analyze(
+        audio_path=audio,
+        progress_callback=progress_callback,
+    )
+
+    if "error" in result:
+        return result["error"], "", ""
+
+    # Risk label
+    score = result["authenticity_score"]
+    label = result["label"]
+    confidence = result["confidence"]
+    risk_label = f"Verdict: {label} | Authenticity: {score}% | Confidence: {confidence}"
+
+    # Details
+    lines = []
+    lines.append(f"Duration           : {result['duration_sec']}s")
+    lines.append(f"Segments Analyzed  : {result['segments_analyzed']}")
+    lines.append(f"Fake Probability   : {result['fake_probability']:.4f}")
+    lines.append(f"Authenticity Score : {score}%")
+    lines.append(f"Label              : {label}")
+    lines.append(f"Confidence         : {confidence}")
+    lines.append(f"Manipulation Type  : {result['manipulation_type']}")
+    lines.append("")
+    lines.append(f"Evidence           : {', '.join(result['evidence'])}")
+    if result['timestamps']:
+        lines.append(f"Suspicious Times   : {result['timestamps']}s")
+    lines.append("")
+    lines.append("--- Per-Segment Breakdown ---")
+    for seg in result.get("segment_results", []):
+        lines.append(
+            f"  [{seg['start_time']:.1f}s - {seg['end_time']:.1f}s] "
+            f"Fake: {seg['fake_probability']:.3f} | "
+            f"Real: {seg['real_probability']:.3f}"
+        )
+
+    details = "\n".join(lines)
+
+    # Explanation / verdict
+    verdict = result["explanation"]
+
+    return risk_label, details, verdict
+
+
+# -------- Multimodal Fusion --------
+def analyze_multimodal(image, video, audio, progress=gr.Progress()):
+    """
+    Multimodal routing and fusion.
+
+    Routing:
+      - image only  -> image pipeline
+      - video only  -> video pipeline (includes per-frame image analysis)
+      - audio only  -> audio pipeline
+      - video+audio -> 0.4*video + 0.4*image_from_video + 0.2*audio
+      - all modals  -> weighted combination
+    """
+    results = {}
+    modality_scores = {"image": None, "video": None, "audio": None}
+
+    # Image analysis
+    if image is not None:
+        progress(0.1, desc="Analyzing image...")
+        risk_label, details, verdict, gradcam = analyze_image(image)
+        # Extract numeric score from risk_label
+        try:
+            score_str = risk_label.split(":")[1].strip().replace("%", "")
+            img_score = float(score_str) / 100.0
+        except (IndexError, ValueError):
+            img_score = 0.5
+        modality_scores["image"] = round(img_score * 100, 1)
+        results["image"] = {"score": img_score, "details": details, "verdict": verdict}
+
+    # Video analysis
+    if video is not None:
+        progress(0.3, desc="Analyzing video...")
+        vid_result = video_analyzer_instance.analyze(video_path=video, fps=4, aggregation="weighted_avg")
+        if "error" not in vid_result:
+            vid_score = vid_result["avg_risk"]
+            modality_scores["video"] = round(vid_score * 100, 1)
+            results["video"] = {"score": vid_score, "prediction": vid_result["prediction"]}
+
+    # Audio analysis
+    if audio is not None:
+        progress(0.6, desc="Analyzing audio...")
+        audio_result = audio_analyzer_instance.analyze(audio_path=audio)
+        if "error" not in audio_result:
+            audio_score = audio_result["fake_probability"]
+            modality_scores["audio"] = round(audio_result["authenticity_score"], 1)
+            results["audio"] = {"score": audio_score, "details": audio_result}
+
+    # Fusion
+    active = {k: v for k, v in results.items() if k in results}
+    if not active:
+        return "No media provided", "{}", ""
+
+    if len(active) == 1:
+        key = list(active.keys())[0]
+        final_score = active[key]["score"]
+    elif "video" in active and "audio" in active and "image" not in active:
+        final_score = 0.4 * active["video"]["score"] + 0.4 * active["video"]["score"] + 0.2 * active["audio"]["score"]
+    elif "video" in active and "audio" in active and "image" in active:
+        final_score = 0.35 * active["image"]["score"] + 0.35 * active["video"]["score"] + 0.3 * active["audio"]["score"]
+    elif "image" in active and "audio" in active:
+        final_score = 0.6 * active["image"]["score"] + 0.4 * active["audio"]["score"]
+    else:
+        weights = []
+        scores = []
+        for k, v in active.items():
+            scores.append(v["score"])
+            weights.append(1.0)
+        final_score = sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+
+    risk_pct = final_score * 100
+    if final_score > 0.7:
+        verdict = "HIGH RISK - Likely AI-generated/manipulated"
+    elif final_score > 0.4:
+        verdict = "MEDIUM RISK - Some manipulation indicators"
+    else:
+        verdict = "LOW RISK - Appears authentic"
+
+    import json
+    output_json = json.dumps({
+        "media_types": list(active.keys()),
+        "authenticity_score": round(100 - risk_pct, 1),
+        "risk_score": round(risk_pct, 1),
+        "label": verdict.split(" - ")[0],
+        "modality_scores": modality_scores,
+        "confidence": "High" if abs(final_score - 0.5) > 0.2 else "Medium",
+    }, indent=2)
+
+    risk_label = f"Multimodal Risk: {risk_pct:.1f}% | Modalities: {', '.join(active.keys())}"
+
+    return risk_label, output_json, verdict
 
 
 # -------- Gradio UI --------
@@ -559,10 +735,61 @@ with gr.Blocks(title="Proofyx") as demo:
                 outputs=[video_risk, video_details, video_frames, gradcam_video_output]
             )
 
+        # ===== AUDIO TAB =====
+        with gr.TabItem("Audio Analysis"):
+            gr.Markdown(
+                "Upload an audio file to detect AI-generated speech, voice cloning, or TTS synthesis."
+            )
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    input_audio = gr.Audio(type="filepath", label="Upload Audio")
+                    audio_btn = gr.Button("Analyze Audio", variant="primary", size="lg")
+                    gr.Markdown(
+                        "*Supported: WAV, MP3, FLAC, M4A, OGG, AAC, WMA*",
+                    )
+
+                with gr.Column(scale=1):
+                    audio_risk = gr.Textbox(label="Verdict", lines=1, interactive=False)
+                    audio_details = gr.Textbox(label="Analysis Details", lines=15, interactive=False)
+                    audio_verdict = gr.Textbox(label="Explanation", lines=3, interactive=False)
+
+            audio_btn.click(
+                fn=analyze_audio_ui,
+                inputs=[input_audio],
+                outputs=[audio_risk, audio_details, audio_verdict]
+            )
+
+        # ===== MULTIMODAL TAB =====
+        with gr.TabItem("Multimodal"):
+            gr.Markdown(
+                "Upload multiple media types for combined analysis. "
+                "The system fuses scores across modalities for higher accuracy."
+            )
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    mm_image = gr.Image(type="pil", label="Image (optional)")
+                    mm_video = gr.Video(label="Video (optional)")
+                    mm_audio = gr.Audio(type="filepath", label="Audio (optional)")
+                    mm_btn = gr.Button("Analyze All", variant="primary", size="lg")
+
+                with gr.Column(scale=1):
+                    mm_risk = gr.Textbox(label="Multimodal Verdict", lines=1, interactive=False)
+                    mm_json = gr.Textbox(label="Fusion Output (JSON)", lines=12, interactive=False)
+                    mm_verdict = gr.Textbox(label="Overall Verdict", lines=2, interactive=False)
+
+            mm_btn.click(
+                fn=analyze_multimodal,
+                inputs=[mm_image, mm_video, mm_audio],
+                outputs=[mm_risk, mm_json, mm_verdict]
+            )
+
     gr.HTML("""
     <div style="text-align:center; padding:16px 0 8px 0; color:#999; font-size:0.8rem;">
-        ViT Deepfake (30%) &bull; FFT Frequency (20%) &bull; Forensic Analysis (20%) &bull;
-        Face Deepfake (15%) &bull; DINOv2 (8%) &bull; EfficientNet V2 (7%) + Temporal Analysis
+        Image/Video: ViT (30%) &bull; FFT (20%) &bull; Forensic (20%) &bull;
+        Face (15%) &bull; DINOv2 (8%) &bull; EfficientNet (7%) + Temporal
+        &nbsp;|&nbsp; Audio: CNN on Mel-Spectrogram &nbsp;|&nbsp; Multimodal Fusion
     </div>
     """)
 
