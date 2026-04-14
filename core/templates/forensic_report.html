@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ProofyX Forensic Report — {{ report.report_id }}</title>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+        font-family: 'Inter', 'Segoe UI', sans-serif;
+        background: #0a0e1a;
+        color: #e2e8f0;
+        padding: 40px;
+        line-height: 1.6;
+    }
+
+    .container { max-width: 800px; margin: 0 auto; }
+
+    /* Header */
+    .header {
+        text-align: center;
+        margin-bottom: 32px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .header h1 {
+        font-size: 2rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #00f0ff, #a855f7);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 8px;
+    }
+    .header .meta {
+        color: #94a3b8;
+        font-size: 0.85rem;
+    }
+    .verdict-badge {
+        display: inline-block;
+        padding: 10px 28px;
+        border-radius: 50px;
+        font-weight: 700;
+        font-size: 1rem;
+        margin: 16px 0;
+        letter-spacing: 0.5px;
+    }
+
+    /* Section */
+    .section {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 24px;
+        margin: 16px 0;
+    }
+    .section h2 {
+        color: #00f0ff;
+        font-size: 1rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 16px;
+    }
+
+    /* Grid */
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .stat {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 8px;
+        padding: 14px;
+        text-align: center;
+    }
+    .stat-value { font-size: 1.3rem; font-weight: 800; color: #00f0ff; }
+    .stat-label { font-size: 0.72rem; color: #94a3b8; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Score bars */
+    .score-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .score-name { width: 140px; color: #94a3b8; font-size: 0.82rem; }
+    .score-bar-bg {
+        flex: 1; height: 6px;
+        background: rgba(255,255,255,0.06);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    .score-bar-fill { height: 100%; border-radius: 3px; }
+    .score-value { width: 60px; text-align: right; font-weight: 600; font-size: 0.82rem; }
+
+    /* Images */
+    .evidence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .evidence-grid img {
+        max-width: 100%;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.06);
+    }
+    .evidence-label {
+        text-align: center;
+        color: #94a3b8;
+        font-size: 0.78rem;
+        margin-top: 6px;
+    }
+
+    /* EXIF table */
+    .exif-table { width: 100%; border-collapse: collapse; }
+    .exif-table td {
+        padding: 6px 8px;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        font-size: 0.82rem;
+    }
+    .exif-table td:first-child { color: #94a3b8; width: 140px; }
+    .exif-table td:last-child { color: #e2e8f0; }
+
+    /* Warnings & Recommendations */
+    .warning {
+        padding: 8px 12px;
+        background: rgba(245,158,11,0.08);
+        border-left: 3px solid #f59e0b;
+        border-radius: 4px;
+        color: #f59e0b;
+        font-size: 0.82rem;
+        margin: 6px 0;
+    }
+    .rec {
+        padding: 6px 0;
+        color: #e2e8f0;
+        font-size: 0.82rem;
+    }
+    .rec::before { content: '→ '; color: #00f0ff; }
+
+    /* Footer */
+    .footer {
+        text-align: center;
+        margin-top: 32px;
+        padding: 16px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        color: #64748b;
+        font-size: 0.75rem;
+    }
+    .footer span { color: #00f0ff; }
+
+    @media print {
+        body { background: white; color: #1a1a2e; padding: 20px; }
+        .section { border-color: #e2e8f0; }
+        .header h1 { color: #0a0e1a; -webkit-text-fill-color: #0a0e1a; }
+    }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+        <h1>PROOFYX FORENSIC REPORT</h1>
+        <p class="meta">
+            Report ID: {{ report.report_id }} | {{ report.timestamp }}
+            {% if report.file_name %} | File: {{ report.file_name }}{% endif %}
+        </p>
+
+        {% set vc = verdict_colors.get(report.overall_verdict, verdict_colors.get('UNCERTAIN', {})) %}
+        <div class="verdict-badge"
+             style="background:{{ vc.get('bg', '#1a1a2e') }};
+                    border:2px solid {{ vc.get('border', '#94a3b8') }};
+                    color:{{ vc.get('text', '#94a3b8') }};">
+            {{ report.overall_verdict }}
+        </div>
+    </div>
+
+    <!-- EXECUTIVE SUMMARY -->
+    <div class="section">
+        <h2>Executive Summary</h2>
+        <div class="grid-4">
+            <div class="stat">
+                <div class="stat-value">{{ "%.1f"|format(report.risk_score * 100) }}%</div>
+                <div class="stat-label">Risk Score</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ report.media_type|upper }}</div>
+                <div class="stat-label">Media Type</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ report.models_used }}</div>
+                <div class="stat-label">Models Used</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ "%.0f"|format(report.processing_time_ms) }}ms</div>
+                <div class="stat-label">Processing</div>
+            </div>
+        </div>
+        {% if report.explanation %}
+        <p style="margin-top:16px;color:#94a3b8;font-size:0.85rem;">{{ report.explanation }}</p>
+        {% endif %}
+    </div>
+
+    <!-- VISUAL EVIDENCE -->
+    {% if report.source_image_base64 or report.gradcam_overlay_base64 %}
+    <div class="section">
+        <h2>Visual Evidence</h2>
+        <div class="evidence-grid">
+            {% if report.source_image_base64 %}
+            <div>
+                <img src="{{ report.source_image_base64 }}" alt="Source Image" />
+                <div class="evidence-label">Source Image
+                    {% if report.image_dimensions %}({{ report.image_dimensions[0] }}x{{ report.image_dimensions[1] }}){% endif %}
+                </div>
+            </div>
+            {% endif %}
+            {% if report.gradcam_overlay_base64 %}
+            <div>
+                <img src="{{ report.gradcam_overlay_base64 }}" alt="Artifact Heatmap" />
+                <div class="evidence-label">GradCAM Artifact Heatmap</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- MODEL ANALYSIS -->
+    {% if report.model_results %}
+    <div class="section">
+        <h2>Model-by-Model Analysis</h2>
+        {% for name, ms in report.model_results.items() %}
+        {% set pct = ms.probability * 100 %}
+        {% if pct > 70 %}{% set bar_color = "#ef4444" %}
+        {% elif pct > 40 %}{% set bar_color = "#f59e0b" %}
+        {% else %}{% set bar_color = "#10b981" %}{% endif %}
+        <div class="score-row">
+            <div class="score-name">{{ name }}</div>
+            <div class="score-bar-bg">
+                <div class="score-bar-fill" style="width:{{ pct|round }}%;background:{{ bar_color }};"></div>
+            </div>
+            <div class="score-value" style="color:{{ bar_color }};">{{ "%.1f"|format(pct) }}%</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- VIDEO ANALYSIS -->
+    {% if report.media_type == 'video' and report.total_frames_analyzed > 0 %}
+    <div class="section">
+        <h2>Video Analysis</h2>
+        <div class="grid">
+            <div class="stat">
+                <div class="stat-value">{{ report.total_frames_analyzed }}</div>
+                <div class="stat-label">Frames Analyzed</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ report.fake_frames }}</div>
+                <div class="stat-label">Fake Frames</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- EXIF METADATA -->
+    {% if report.exif_metadata %}
+    <div class="section">
+        <h2>EXIF Metadata</h2>
+        <table class="exif-table">
+            {% if report.exif_metadata.camera_make %}
+            <tr><td>Camera</td><td>{{ report.exif_metadata.camera_make }} {{ report.exif_metadata.camera_model or '' }}</td></tr>
+            {% endif %}
+            {% if report.exif_metadata.timestamp %}
+            <tr><td>Timestamp</td><td>{{ report.exif_metadata.timestamp }}</td></tr>
+            {% endif %}
+            {% if report.exif_metadata.software %}
+            <tr><td>Software</td><td>{{ report.exif_metadata.software }}</td></tr>
+            {% endif %}
+            {% if report.exif_metadata.gps_coordinates %}
+            <tr><td>GPS</td><td>{{ report.exif_metadata.gps_coordinates }}</td></tr>
+            {% endif %}
+            <tr><td>Has EXIF</td><td>{{ 'Yes' if report.exif_metadata.has_exif else 'No' }}</td></tr>
+            <tr><td>Suspicion</td><td>{{ "%.0f"|format(report.exif_metadata.suspicion_score * 100) }}%</td></tr>
+        </table>
+        {% if report.exif_metadata.findings %}
+        <div style="margin-top:12px;">
+            {% for finding in report.exif_metadata.findings %}
+            <div class="warning">{{ finding }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- WARNINGS -->
+    {% if report.warnings %}
+    <div class="section">
+        <h2>Warnings</h2>
+        {% for w in report.warnings %}
+        <div class="warning">{{ w }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- RECOMMENDATIONS -->
+    {% if report.recommendations %}
+    <div class="section">
+        <h2>Recommendations</h2>
+        {% for r in report.recommendations %}
+        <div class="rec">{{ r }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- FOOTER -->
+    <div class="footer">
+        Generated by <span>ProofyX v2.0</span> |
+        {{ report.fusion_mode }} fusion |
+        {{ report.models_used }} model{{ 's' if report.models_used != 1 }} |
+        Face detected: {{ 'Yes' if report.face_detected else 'No' }}
+        <br>
+        This report is for informational purposes only. Results should be interpreted by qualified analysts.
+    </div>
+
+</div>
+</body>
+</html>

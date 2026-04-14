@@ -25,11 +25,11 @@ from core_models.face_deepfake_model import FaceDeepfakeModel
 
 # ---------------- CONFIG ----------------
 BATCH_SIZE = 16
-EPOCHS = 25
+EPOCHS = 15
 BACKBONE_LR = 5e-6         # Lower LR for subtler features
 HEAD_LR = 5e-4
 TRAIN_SPLIT = 0.85
-MAX_SAMPLES = 12000         # More data for better generalization
+MAX_SAMPLES = 4000          # CPU-practical training
 MODEL_PATH = "models/image_face_model.pth"
 EARLY_STOPPING_PATIENCE = 5  # More patience
 LABEL_SMOOTHING = 0.05       # Prevent overconfidence

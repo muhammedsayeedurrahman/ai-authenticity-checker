@@ -21,6 +21,8 @@ from torchvision import transforms
 from collections import deque
 
 from pipeline.face_gate import face_present
+from core_models.frequency_cnn import FrequencyCNN, fft_to_tensor
+from core_models.fusion_mlp import FusionMLP
 
 
 # -------- Shared transform --------
@@ -373,71 +375,85 @@ class FrequencyAnalyzer:
 #  4. ModelEnsemble
 # ================================================================
 
-# Weights: ViT 30%, Frequency 20%, Forensic 20%, Face 15%, DINOv2 8%, EfficientNet 7%
+# Corrected weights: ViT 50%, EfficientNet 30%, Forensic 20%
+# Frequency, Face, DINOv2 are auxiliary — they contribute but don't dominate
 WEIGHTS = {
-    "vit": 0.30, "frequency": 0.20, "forensic": 0.20,
-    "face": 0.15, "dino": 0.08, "efficientnet": 0.07,
+    "vit": 0.40, "efficientnet": 0.20, "forensic": 0.15,
+    "frequency": 0.10, "face": 0.10, "dino": 0.05,
 }
 # When face model detects fake (>0.6), boost face weight
 WEIGHTS_FACE_BOOSTED = {
-    "vit": 0.25, "frequency": 0.18, "forensic": 0.17,
-    "face": 0.25, "dino": 0.08, "efficientnet": 0.07,
+    "vit": 0.35, "efficientnet": 0.15, "forensic": 0.15,
+    "frequency": 0.10, "face": 0.20, "dino": 0.05,
 }
-HIGH_CONFIDENCE_OVERRIDE = 0.65
+HIGH_CONFIDENCE_OVERRIDE = 0.60
+
+
+def _calibrate(score, temperature=1.2):
+    """
+    Apply temperature scaling to calibrate model output.
+    Maps raw sigmoid/softmax scores to comparable probability space.
+    Temperature 1.2 preserves more signal than 1.5.
+    """
+    import math
+    # Convert to logit, apply temperature, convert back
+    score = max(min(score, 0.999), 0.001)
+    logit = math.log(score / (1 - score))
+    calibrated = 1.0 / (1.0 + math.exp(-logit / temperature))
+    return calibrated
 
 
 class ModelEnsemble:
     """
     Holds all loaded models and computes weighted ensemble scores.
+    Uses FusionMLP with learned calibration when available.
     """
 
     def __init__(self, dino_model, eff_model, face_model, device,
-                 vit_model=None, vit_processor=None):
+                 vit_model=None, vit_processor=None,
+                 texture_model=None, freq_cnn=None, fusion_mlp=None):
         self.dino_model = dino_model
         self.eff_model = eff_model
         self.face_model = face_model
         self.device = device
         self.vit_model = vit_model
         self.vit_processor = vit_processor
+        self.texture_model = texture_model
+        self.freq_cnn = freq_cnn
+        self.fusion_mlp = fusion_mlp
         self.frequency_analyzer = FrequencyAnalyzer()
 
     def predict(self, pil_img, has_face=False, face_crop=None):
         """
         Run all models on a single frame and return per-model scores.
 
+        Uses FusionMLP for final scoring when available, falling back
+        to manual weighted average otherwise.
+
         Args:
             pil_img: Full frame as PIL image.
             has_face: Whether a face was detected.
-            face_crop: Cropped face PIL image (for frequency analysis).
+            face_crop: Cropped face PIL image.
 
         Returns:
             dict with per-model scores and final frame_risk.
         """
-        tensor = _transform(pil_img.convert("RGB")).unsqueeze(0).to(self.device)
+        model_input = face_crop if (has_face and face_crop is not None) else pil_img
+        tensor = _transform(model_input.convert("RGB")).unsqueeze(0).to(self.device)
 
         dino_prob = 0.0
         eff_prob = 0.0
         face_prob = 0.0
         vit_prob = 0.0
+        texture_prob = 0.0
+        freq_cnn_prob = 0.0
         active_models = 0
 
         with torch.no_grad():
-            if self.dino_model is not None:
-                dino_prob = self.dino_model(tensor).item()
-                active_models += 1
-
-            if self.eff_model is not None:
-                eff_prob = self.eff_model(tensor).item()
-                active_models += 1
-
-            if has_face and self.face_model is not None:
-                real_prob = self.face_model(tensor).item()
-                face_prob = 1.0 - real_prob
-                active_models += 1
-
+            # Primary models (FusionMLP inputs)
             if self.vit_model is not None and self.vit_processor is not None:
                 vit_inputs = self.vit_processor(
-                    images=pil_img.convert("RGB"), return_tensors="pt"
+                    images=model_input.convert("RGB"), return_tensors="pt"
                 ).to(self.device)
                 vit_outputs = self.vit_model(**vit_inputs)
                 vit_probs = torch.softmax(vit_outputs.logits, dim=1)
@@ -451,60 +467,111 @@ class ModelEnsemble:
                 )
                 active_models += 1
 
-        # Forensic analysis (noise + ELA)
+            if self.texture_model is not None:
+                texture_prob = self.texture_model(tensor).item()
+                active_models += 1
+
+            if self.freq_cnn is not None:
+                freq_input = face_crop if face_crop is not None else pil_img
+                fft_tensor = fft_to_tensor(freq_input).unsqueeze(0).to(self.device)
+                freq_cnn_prob = self.freq_cnn(fft_tensor).item()
+                active_models += 1
+
+            # Auxiliary models
+            if self.dino_model is not None:
+                dino_prob = self.dino_model(tensor).item()
+                active_models += 1
+
+            if self.eff_model is not None:
+                eff_prob = self.eff_model(tensor).item()
+                active_models += 1
+
+            if has_face and self.face_model is not None:
+                real_prob = self.face_model(tensor).item()
+                face_prob = 1.0 - real_prob
+                active_models += 1
+
+        # Forensic analysis (heuristic, on full frame)
         forensic_prob = self._forensic_score(pil_img)
         active_models += 1
 
-        # Frequency analysis (use face crop if available, else full frame)
-        freq_input = face_crop if face_crop is not None else pil_img
-        freq_result = self.frequency_analyzer.analyze(freq_input)
-        freq_prob = freq_result["frequency_score"]
-        active_models += 1
+        # Fallback heuristic frequency if FrequencyCNN not available
+        freq_heuristic_prob = 0.0
+        if self.freq_cnn is None:
+            freq_input = face_crop if face_crop is not None else pil_img
+            freq_result = self.frequency_analyzer.analyze(freq_input)
+            freq_heuristic_prob = freq_result["frequency_score"]
+            active_models += 1
 
         if active_models == 0:
             return None
 
-        # Weighted ensemble — boost face weight when face model detects fake
-        use_boosted = has_face and self.face_model is not None and face_prob > 0.6
-        w = WEIGHTS_FACE_BOOSTED if use_boosted else WEIGHTS
+        # Scoring: FusionMLP or fallback
+        freq_display = freq_cnn_prob if self.freq_cnn is not None else freq_heuristic_prob
 
-        total_weight = 0.0
-        weighted_sum = 0.0
+        if self.fusion_mlp is not None:
+            frame_risk = self.fusion_mlp.predict(
+                vit=vit_prob,
+                efficientnet=texture_prob,
+                forensic=forensic_prob,
+                frequency=freq_display,
+            )
+        else:
+            # Fallback: manual weighted average
+            use_boosted = has_face and self.face_model is not None and face_prob > 0.6
+            w = WEIGHTS_FACE_BOOSTED if use_boosted else WEIGHTS
 
-        if self.dino_model is not None:
-            weighted_sum += w["dino"] * dino_prob
-            total_weight += w["dino"]
-        if self.eff_model is not None:
-            weighted_sum += w["efficientnet"] * eff_prob
-            total_weight += w["efficientnet"]
-        if has_face and self.face_model is not None:
-            weighted_sum += w["face"] * face_prob
-            total_weight += w["face"]
-        if self.vit_model is not None:
-            weighted_sum += w["vit"] * vit_prob
-            total_weight += w["vit"]
-        weighted_sum += w["forensic"] * forensic_prob
-        total_weight += w["forensic"]
-        weighted_sum += w["frequency"] * freq_prob
-        total_weight += w["frequency"]
+            total_weight = 0.0
+            weighted_sum = 0.0
+            scores_map = {}
 
-        frame_risk = weighted_sum / total_weight if total_weight > 0 else 0.0
+            if self.dino_model is not None:
+                dino_cal = _calibrate(dino_prob)
+                weighted_sum += w["dino"] * dino_cal
+                total_weight += w["dino"]
+                scores_map["dino"] = dino_cal
+            eff_for_fusion = texture_prob if self.texture_model is not None else eff_prob
+            if self.texture_model is not None or self.eff_model is not None:
+                eff_cal = _calibrate(eff_for_fusion)
+                weighted_sum += w["efficientnet"] * eff_cal
+                total_weight += w["efficientnet"]
+                scores_map["efficientnet"] = eff_cal
+            if has_face and self.face_model is not None:
+                face_cal = _calibrate(face_prob)
+                weighted_sum += w["face"] * face_cal
+                total_weight += w["face"]
+                scores_map["face"] = face_cal
+            if self.vit_model is not None:
+                vit_cal = _calibrate(vit_prob)
+                weighted_sum += w["vit"] * vit_cal
+                total_weight += w["vit"]
+                scores_map["vit"] = vit_cal
 
-        # High-confidence override
-        max_prob = max(dino_prob, eff_prob, face_prob, vit_prob, freq_prob)
-        if max_prob > HIGH_CONFIDENCE_OVERRIDE:
-            frame_risk = max(frame_risk, max_prob)
+            forensic_cal = _calibrate(forensic_prob)
+            weighted_sum += w["forensic"] * forensic_cal
+            total_weight += w["forensic"]
+
+            freq_cal = _calibrate(freq_display)
+            weighted_sum += w["frequency"] * freq_cal
+            total_weight += w["frequency"]
+
+            frame_risk = weighted_sum / total_weight if total_weight > 0 else 0.0
+
+            trained_scores = [v for k, v in scores_map.items()]
+            n_trained = len(scores_map)
+            if trained_scores:
+                max_prob = max(trained_scores)
+                override_thresh = HIGH_CONFIDENCE_OVERRIDE if n_trained >= 3 else 0.50
+                if max_prob > override_thresh:
+                    frame_risk = max(frame_risk, max_prob * 0.9 if n_trained < 3 else max_prob)
 
         return {
             "dino_prob": round(dino_prob, 4),
-            "eff_prob": round(eff_prob, 4),
+            "eff_prob": round(texture_prob if self.texture_model else eff_prob, 4),
             "face_prob": round(face_prob, 4),
             "vit_prob": round(vit_prob, 4),
             "forensic_prob": round(forensic_prob, 4),
-            "frequency_prob": round(freq_prob, 4),
-            "freq_high_ratio": freq_result["high_freq_ratio"],
-            "freq_radial_dropoff": freq_result["radial_dropoff"],
-            "freq_azimuthal": freq_result["azimuthal_score"],
+            "frequency_prob": round(freq_display, 4),
             "has_face": has_face,
             "frame_risk": round(frame_risk, 4),
             "prediction": "FAKE" if frame_risk > 0.5 else "REAL",
@@ -651,10 +718,13 @@ class VideoAnalyzer:
     """
 
     def __init__(self, dino_model, eff_model, face_model, device,
-                 vit_model=None, vit_processor=None):
+                 vit_model=None, vit_processor=None,
+                 texture_model=None, freq_cnn=None, fusion_mlp=None):
         self.ensemble = ModelEnsemble(
             dino_model, eff_model, face_model, device,
             vit_model=vit_model, vit_processor=vit_processor,
+            texture_model=texture_model, freq_cnn=freq_cnn,
+            fusion_mlp=fusion_mlp,
         )
         self.face_extractor = FaceExtractor()
         self.temporal = TemporalAnalyzer(window_size=10)

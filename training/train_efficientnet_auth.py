@@ -26,9 +26,9 @@ EPOCHS = 15
 BACKBONE_LR = 1e-5
 HEAD_LR = 1e-3
 TRAIN_SPLIT = 0.85
-MAX_SAMPLES = 4000           # Faster training
+MAX_SAMPLES = 2000           # CPU-practical training
 MODEL_PATH = "models/efficientnet_auth_model.pth"
-EARLY_STOPPING_PATIENCE = 3
+EARLY_STOPPING_PATIENCE = 5
 LABEL_SMOOTHING = 0.05
 # ---------------------------------------
 
@@ -39,11 +39,15 @@ def main():
 
     # -------- Transforms (video-like augmentation) --------
     train_transform = transforms.Compose([
-        transforms.Resize((232, 232)),
-        transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+        transforms.Resize((256, 256)),
+        transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
         transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        transforms.RandomRotation(10),
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0))], p=0.3),
+        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.05),
+        transforms.RandomGrayscale(p=0.05),
         transforms.ToTensor(),
+        transforms.RandomErasing(p=0.1, scale=(0.02, 0.1)),
         transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]

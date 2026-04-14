@@ -38,7 +38,7 @@ LR = 1e-3
 TRAIN_SPLIT = 0.85
 MAX_SAMPLES = 8000          # Total samples to collect
 MODEL_PATH = "models/audio_deepfake_model.pth"
-EARLY_STOPPING_PATIENCE = 4
+EARLY_STOPPING_PATIENCE = 5
 LABEL_SMOOTHING = 0.05
 
 # Audio preprocessing (matches zo9999)
@@ -49,9 +49,11 @@ N_FFT = 2048
 HOP_LENGTH = 512
 MAX_DURATION = 5.0          # seconds (matches zo9999 training)
 
-# Dataset config
-HF_DATASET = "jungjongho/ASVspoof2019"
-HF_FALLBACK = "MohamedRashad/FakeTTS"
+# Dataset config — try multiple sources
+HF_DATASETS = [
+    "moibrahimovic/fake_or_real",
+    "ud-nlp/real-vs-fake-human-voice-deepfake-audio",
+]
 # ==========================================
 
 
@@ -75,62 +77,144 @@ def audio_to_mel(waveform, sr=SAMPLE_RATE):
     return mel_db
 
 
+class SpecAugment:
+    """SpecAugment: frequency and time masking for mel-spectrogram augmentation."""
+
+    def __init__(self, freq_mask_param=15, time_mask_param=20,
+                 n_freq_masks=2, n_time_masks=2):
+        self.freq_mask_param = freq_mask_param
+        self.time_mask_param = time_mask_param
+        self.n_freq_masks = n_freq_masks
+        self.n_time_masks = n_time_masks
+
+    def __call__(self, mel):
+        """Apply random frequency and time masks to a mel-spectrogram.
+
+        Args:
+            mel: numpy array of shape (n_mels, time_steps)
+        Returns:
+            augmented mel-spectrogram (same shape)
+        """
+        mel = mel.copy()
+        n_mels, n_time = mel.shape
+
+        # Frequency masking
+        for _ in range(self.n_freq_masks):
+            f = random.randint(0, min(self.freq_mask_param, n_mels - 1))
+            f0 = random.randint(0, n_mels - f)
+            mel[f0:f0 + f, :] = mel.mean()
+
+        # Time masking
+        for _ in range(self.n_time_masks):
+            t = random.randint(0, min(self.time_mask_param, n_time - 1))
+            t0 = random.randint(0, n_time - t)
+            mel[:, t0:t0 + t] = mel.mean()
+
+        return mel
+
+
 class AudioMelDataset(Dataset):
     """Dataset that holds pre-computed mel-spectrograms and labels."""
 
-    def __init__(self, mels, labels):
+    def __init__(self, mels, labels, augment=False):
         self.mels = mels
         self.labels = labels
+        self.augment = augment
+        if augment:
+            self.spec_augment = SpecAugment(
+                freq_mask_param=12, time_mask_param=15,
+                n_freq_masks=2, n_time_masks=2,
+            )
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        mel = torch.tensor(self.mels[idx], dtype=torch.float32).unsqueeze(0)
+        mel = self.mels[idx]
+        if self.augment:
+            mel = self.spec_augment(mel)
+            # Random gain variation
+            if random.random() < 0.3:
+                gain = random.uniform(0.8, 1.2)
+                mel = mel * gain
+        mel = torch.tensor(mel, dtype=torch.float32).unsqueeze(0)
         label = torch.tensor(self.labels[idx], dtype=torch.long)
         return mel, label
 
 
+def _parse_label(sample):
+    """Parse label from a HuggingFace dataset sample. Returns 0=fake, 1=real, or -1 if unknown."""
+    # ASVspoof style: 'key' column
+    if "key" in sample:
+        raw = sample["key"]
+        return 1 if raw == "bonafide" else 0
+
+    # fake_or_real style: 'label' as string or int
+    if "label" in sample:
+        raw = sample["label"]
+        if isinstance(raw, str):
+            low = raw.lower().strip()
+            if low in ("bonafide", "real", "genuine", "original", "authentic"):
+                return 1
+            elif low in ("spoof", "fake", "deepfake", "synthetic", "generated"):
+                return 0
+            return -1
+        else:
+            # int label: 0 = real/original, nonzero = fake (common convention)
+            # But check if it's binary (0/1) where 1=fake
+            return 0 if int(raw) > 0 else 1
+
+    if "is_fake" in sample:
+        return 0 if sample["is_fake"] else 1
+
+    return -1
+
+
 def load_dataset_hf():
-    """Load audio samples from HuggingFace dataset."""
+    """Load audio samples from HuggingFace datasets (tries multiple sources)."""
     from datasets import load_dataset, Audio
 
-    print(f"Attempting to load: {HF_DATASET}")
+    # Force soundfile backend (avoids torchcodec/FFmpeg issues on Windows)
+    import datasets.config
+    datasets.config.AUDIO_DECODER_BACKEND = "soundfile"
 
-    try:
-        ds = load_dataset(HF_DATASET, split="train", streaming=True)
-        ds = ds.cast_column("audio", Audio(sampling_rate=SAMPLE_RATE))
-    except Exception as e:
-        print(f"Primary dataset failed ({e}), trying fallback: {HF_FALLBACK}")
+    ds = None
+    for ds_name in HF_DATASETS:
+        print(f"Attempting to load: {ds_name}")
         try:
-            ds = load_dataset(HF_FALLBACK, split="train", streaming=True)
-            ds = ds.cast_column("audio", Audio(sampling_rate=SAMPLE_RATE))
-        except Exception as e2:
-            print(f"Fallback also failed: {e2}")
-            print("\nPlease provide audio data manually in data/audio/real/ and data/audio/fake/")
-            return None, None
+            ds = load_dataset(ds_name, split="train", streaming=True)
+            ds = ds.cast_column("audio", Audio(sampling_rate=SAMPLE_RATE, decode=True))
+            # Test that we can actually read a sample
+            sample = next(iter(ds))
+            print(f"  Columns: {list(sample.keys())}")
+            # Re-create the iterator since we consumed one
+            ds = load_dataset(ds_name, split="train", streaming=True)
+            ds = ds.cast_column("audio", Audio(sampling_rate=SAMPLE_RATE, decode=True))
+            print(f"  Successfully connected to {ds_name}")
+            break
+        except Exception as e:
+            print(f"  Failed: {e}")
+            ds = None
+
+    if ds is None:
+        print("\nAll HuggingFace datasets failed.")
+        print("Please provide audio data manually in data/audio/real/ and data/audio/fake/")
+        return None, None
 
     per_class = MAX_SAMPLES // 2
     mels = []
     labels = []
     class_counts = {0: 0, 1: 0}  # 0=fake, 1=real
     total_seen = 0
+    errors = 0
 
     print(f"Collecting {per_class} samples per class ({MAX_SAMPLES} total)...")
 
     for sample in ds:
         total_seen += 1
 
-        # Determine label (dataset-specific)
-        if "label" in sample:
-            raw_label = sample["label"]
-            if isinstance(raw_label, str):
-                label = 1 if raw_label.lower() in ("bonafide", "real", "genuine") else 0
-            else:
-                label = int(raw_label)
-        elif "is_fake" in sample:
-            label = 0 if sample["is_fake"] else 1
-        else:
+        label = _parse_label(sample)
+        if label == -1:
             continue
 
         if class_counts[label] >= per_class:
@@ -138,7 +222,6 @@ def load_dataset_hf():
                 break
             continue
 
-        # Extract audio
         try:
             audio_data = sample["audio"]
             waveform = audio_data["array"]
@@ -147,25 +230,31 @@ def load_dataset_hf():
             if len(waveform) == 0:
                 continue
 
-            # Trim to max duration
             max_samples = int(MAX_DURATION * sr)
             waveform = waveform[:max_samples].astype(np.float32)
 
-            # Generate mel-spectrogram
             mel = audio_to_mel(waveform, sr)
             mels.append(mel)
             labels.append(label)
             class_counts[label] += 1
 
             collected = class_counts[0] + class_counts[1]
-            if collected % 500 == 0:
+            if collected % 200 == 0:
                 print(f"  collected {collected}/{MAX_SAMPLES} "
                       f"(Fake: {class_counts[0]}, Real: {class_counts[1]}, scanned: {total_seen})")
 
         except Exception:
+            errors += 1
+            if errors > 50:
+                print(f"  Too many errors ({errors}), stopping collection")
+                break
             continue
 
-    print(f"Collected {len(mels)} samples (Fake: {class_counts[0]}, Real: {class_counts[1]})")
+    print(f"Collected {len(mels)} samples (Fake: {class_counts[0]}, Real: {class_counts[1]}, errors: {errors})")
+
+    if len(mels) < 20:
+        return None, None
+
     return np.array(mels), np.array(labels)
 
 
@@ -241,11 +330,11 @@ def main():
     print(f"Class balance: Fake={sum(labels == 0)}, Real={sum(labels == 1)}")
 
     train_loader = DataLoader(
-        AudioMelDataset(train_mels, train_labels),
+        AudioMelDataset(train_mels, train_labels, augment=True),
         batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True,
     )
     val_loader = DataLoader(
-        AudioMelDataset(val_mels, val_labels),
+        AudioMelDataset(val_mels, val_labels, augment=False),
         batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True,
     )
 

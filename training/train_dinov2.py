@@ -24,9 +24,10 @@ BATCH_SIZE = 16
 EPOCHS = 15
 BACKBONE_LR = 1e-5
 HEAD_LR = 1e-3
-TRAIN_SPLIT = 0.9
+TRAIN_SPLIT = 0.85
 MAX_SAMPLES = 2000
-EARLY_STOPPING_PATIENCE = 3
+EARLY_STOPPING_PATIENCE = 5
+LABEL_SMOOTHING = 0.05
 MODEL_PATH = "models/dinov2_auth_model.pth"
 # ========================================
 
@@ -37,11 +38,15 @@ def main():
 
     # -------- Transforms --------
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+        transforms.Resize((256, 256)),
+        transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(10),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        transforms.RandomRotation(15),
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0))], p=0.3),
+        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.05),
+        transforms.RandomGrayscale(p=0.05),
         transforms.ToTensor(),
+        transforms.RandomErasing(p=0.1, scale=(0.02, 0.1)),
         transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]
@@ -127,15 +132,15 @@ def main():
     backbone_params = [p for p in model.backbone.parameters() if p.requires_grad]
     head_params = list(model.classifier.parameters())
 
-    optimizer = torch.optim.Adam([
-        {"params": backbone_params, "lr": BACKBONE_LR},
-        {"params": head_params, "lr": HEAD_LR},
+    optimizer = torch.optim.AdamW([
+        {"params": backbone_params, "lr": BACKBONE_LR, "weight_decay": 1e-4},
+        {"params": head_params, "lr": HEAD_LR, "weight_decay": 1e-4},
     ])
 
-    scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS)
+    scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS, eta_min=1e-7)
 
     # -------- Training with early stopping --------
-    print("\nStarting DINOv2 auth model training...\n")
+    print(f"\nStarting DINOv2 auth model training (label_smoothing={LABEL_SMOOTHING})...\n")
 
     best_val_loss = float("inf")
     patience_counter = 0
@@ -147,12 +152,14 @@ def main():
         for imgs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS}"):
             imgs = imgs.to(device)
             labels = labels.unsqueeze(1).to(device)
+            smoothed = labels * (1 - LABEL_SMOOTHING) + (1 - labels) * LABEL_SMOOTHING
 
             preds = model(imgs)
-            loss = criterion(preds, labels)
+            loss = criterion(preds, smoothed)
 
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             total_loss += loss.item()
