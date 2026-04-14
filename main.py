@@ -28,6 +28,7 @@ import core.config  # noqa: F401
 from api.routes import router as api_router
 from core.secrets import get_active_pools
 from ui.gradio_app import create_gradio_app
+from ui.theme import CUSTOM_CSS, FORCE_DARK_JS, create_theme
 
 # ──────────────────────────────────────────────
 # Logging
@@ -72,6 +73,9 @@ app = gr.mount_gradio_app(
     gradio_app,
     path="/ui",
     allowed_paths=[assets_dir],
+    theme=create_theme(),
+    css=CUSTOM_CSS,
+    js=FORCE_DARK_JS,
 )
 
 # ──────────────────────────────────────────────

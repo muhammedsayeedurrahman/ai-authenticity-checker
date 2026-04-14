@@ -47,9 +47,6 @@ def create_gradio_app() -> gr.Blocks:
 
     with gr.Blocks(
         title="ProofyX",
-        theme=create_theme(),
-        css=CUSTOM_CSS,
-        js=FORCE_DARK_JS,
     ) as demo:
 
         # ===== STARS BACKGROUND =====
@@ -75,7 +72,7 @@ def create_gradio_app() -> gr.Blocks:
                 if os.path.exists(LOGO_PATH):
                     gr.HTML(f"""
                     <div style="text-align:center;padding:16px 0 8px 0;">
-                        <img src="file/assets/logo.jpeg" alt="ProofyX"
+                        <img src="/assets/logo.jpeg" alt="ProofyX"
                              style="width:48px;height:48px;border-radius:12px;
                                     box-shadow:0 0 16px rgba(0,240,255,0.2);" />
                         <div style="margin-top:8px;font-weight:800;font-size:1.1rem;
