@@ -12,3 +12,8 @@ imageio
 imageio-ffmpeg
 librosa
 soundfile
+fastapi
+uvicorn
+python-dotenv
+python-multipart
+pydantic
