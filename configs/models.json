@@ -1,0 +1,117 @@
+{
+  "models_dir": "models",
+  "device": "cpu",
+  "threshold": 0.5,
+  "idle_unload_seconds": 600,
+
+  "vit": {
+    "type": "huggingface",
+    "model_id": "prithivMLmods/Deep-Fake-Detector-v2-Model",
+    "weight": 0.40,
+    "enabled": true,
+    "description": "ViT deepfake detector (HuggingFace)"
+  },
+  "texture": {
+    "type": "local",
+    "class": "EfficientNetTexture",
+    "path": "efficient.pth",
+    "weight": 0.20,
+    "enabled": true,
+    "description": "EfficientNet-B4 texture analysis"
+  },
+  "frequency": {
+    "type": "local",
+    "class": "FrequencyCNN",
+    "path": "frequency.pth",
+    "weight": 0.10,
+    "enabled": true,
+    "description": "Frequency-domain CNN (FFT features)"
+  },
+  "face": {
+    "type": "local",
+    "class": "FaceDeepfakeModel",
+    "path": "image_face_model.pth",
+    "weight": 0.10,
+    "enabled": true,
+    "requires_face": true,
+    "description": "ResNet50 face deepfake detector"
+  },
+  "dino": {
+    "type": "local",
+    "class": "DINOv2AuthModel",
+    "path": "dinov2_auth_model.pth",
+    "weight": 0.05,
+    "enabled": true,
+    "description": "DINOv2 fine-tuned authentication"
+  },
+  "efficientnet": {
+    "type": "local",
+    "class": "EfficientNetAuthModel",
+    "path": "efficientnet_auth_model.pth",
+    "weight": 0.15,
+    "enabled": true,
+    "description": "EfficientNetV2-S authentication"
+  },
+  "fusion": {
+    "type": "local",
+    "class": "FusionMLP",
+    "path": "fusion_mlp.pth",
+    "weight": null,
+    "enabled": true,
+    "n_inputs": 4,
+    "description": "Learned fusion with temperature calibration"
+  },
+  "corefakenet": {
+    "type": "local",
+    "class": "CorefakeNet",
+    "path": "corefakenet.pth",
+    "weight": 1.0,
+    "enabled": true,
+    "fast_mode": true,
+    "description": "Unified hybrid CNN (5 heads, attention fusion)"
+  },
+
+  "ensemble_weights": {
+    "default": {
+      "vit": 0.40,
+      "texture": 0.20,
+      "forensic": 0.15,
+      "frequency": 0.10,
+      "face": 0.10,
+      "dino": 0.05
+    },
+    "face_boosted": {
+      "vit": 0.35,
+      "texture": 0.15,
+      "forensic": 0.15,
+      "frequency": 0.10,
+      "face": 0.20,
+      "dino": 0.05
+    }
+  },
+
+  "calibration": {
+    "temperature": 1.2,
+    "high_confidence_override": 0.60
+  },
+
+  "audio": {
+    "type": "local",
+    "path": "audio_deepfake_model.pth",
+    "enabled": true,
+    "description": "Audio deepfake CNN"
+  },
+
+  "api_keys": {
+    "_comment": "API key pools are loaded from .env — this section documents supported services",
+    "services": [
+      "PROOFYX_API_KEY",
+      "GOOGLE_VISION_KEY",
+      "HF_TOKEN",
+      "TWILIO_SID",
+      "TWILIO_TOKEN"
+    ],
+    "auth_required_routes": ["/api/v1/analyze/*"],
+    "public_routes": ["/api/v1/health", "/api/v1/models/status", "/api/v1/history"]
+  }
+}
