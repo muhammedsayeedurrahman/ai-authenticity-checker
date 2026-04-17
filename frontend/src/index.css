@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-text-primary font-sans antialiased;
+    margin: 0;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-background-card border border-border-subtle rounded-2xl backdrop-blur-md;
+  }
+  
+  .glass-card-hover {
+    @apply hover:bg-background-card-hover transition-colors duration-300;
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 rounded-xl font-bold text-white transition-all duration-300;
+    background: linear-gradient(135deg, theme('colors.accent.cyan') 0%, theme('colors.accent.violet') 100%);
+  }
+  
+  .btn-primary:active {
+    @apply scale-95;
+  }
+}
