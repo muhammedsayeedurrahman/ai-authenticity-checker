@@ -46,7 +46,7 @@ from transformers import ViTForImageClassification, ViTImageProcessor
 MODELS_DIR = os.path.join(ROOT_DIR, "models")
 
 # Step 6: Corrected fusion weights — ViT 50%, EfficientNet 30%, Forensic 20%
-With auxiliary models (face, dino, frequency) contributing smaller shares
+#With auxiliary models (face, dino, frequency) contributing smaller shares
 WEIGHTS = {
     "vit": 0.40, "efficientnet": 0.20, "forensic": 0.15,
     "frequency": 0.10, "face": 0.10, "dino": 0.05,
