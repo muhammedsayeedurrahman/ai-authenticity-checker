@@ -16,9 +16,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torchvision import transforms
-from datasets import load_dataset
 
 from core_models.efficientnet_auth_model import EfficientNetAuthModel
+from training.dataset_portraits import load_portrait_dataset, PortraitDataset
 
 # ---------------- CONFIG ----------------
 BATCH_SIZE = 32
@@ -26,7 +26,7 @@ EPOCHS = 15
 BACKBONE_LR = 1e-5
 HEAD_LR = 1e-3
 TRAIN_SPLIT = 0.85
-MAX_SAMPLES = 2000           # CPU-practical training
+MAX_SAMPLES = 20000          # 10x increase for meaningful training
 MODEL_PATH = "models/efficientnet_auth_model.pth"
 EARLY_STOPPING_PATIENCE = 5
 LABEL_SMOOTHING = 0.05
@@ -63,77 +63,24 @@ def main():
         )
     ])
 
-    # -------- Load dataset via streaming (balanced) --------
-    print("Loading Hugging Face dataset (streaming)...")
-    stream = load_dataset(
-        "Hemg/AI-Generated-vs-Real-Images-Datasets",
-        split="train",
-        streaming=True
+    # -------- Load multi-source portrait dataset (8 HF sources) --------
+    print(f"Loading multi-source portrait dataset ({MAX_SAMPLES} samples)...")
+    train_data, val_data = load_portrait_dataset(
+        max_samples=MAX_SAMPLES,
+        train_split=TRAIN_SPLIT,
+        face_align=True,
     )
-
-    per_class = MAX_SAMPLES // 2
-    print(f"Collecting {per_class} samples per class ({MAX_SAMPLES} total)...")
-    class_buckets = {0: [], 1: []}  # 0=Real, 1=AI
-    total_seen = 0
-    last_printed = 0
-    for sample in stream:
-        label = int(sample["label"])  # 1 = AI, 0 = Real
-        if label in class_buckets and len(class_buckets[label]) < per_class:
-            img = sample["image"].convert("RGB")
-            class_buckets[label].append((img, float(label)))
-        total_seen += 1
-        collected = len(class_buckets[0]) + len(class_buckets[1])
-        if collected >= last_printed + 500:
-            last_printed = collected
-            print(f"  collected {collected}/{MAX_SAMPLES} (Real: {len(class_buckets[0])}, AI: {len(class_buckets[1])}, scanned: {total_seen})")
-        if total_seen % 10000 == 0 and collected == last_printed:
-            print(f"  scanning... {total_seen} samples seen (Real: {len(class_buckets[0])}, AI: {len(class_buckets[1])})")
-        if len(class_buckets[0]) >= per_class and len(class_buckets[1]) >= per_class:
-            break
-
-    samples = class_buckets[0] + class_buckets[1]
-    print(f"Collected {len(samples)} samples (Real: {len(class_buckets[0])}, AI: {len(class_buckets[1])}) from {total_seen} streamed")
-
-    # Shuffle before split
-    random.seed(42)
-    random.shuffle(samples)
-
-    # -------- Train / Val split --------
-    split = int(len(samples) * TRAIN_SPLIT)
-    train_data = samples[:split]
-    val_data = samples[split:]
 
     print(f"Train samples: {len(train_data)}")
     print(f"Val samples  : {len(val_data)}")
 
-    # -------- Dataset Wrapper --------
-    class ImageDataset(torch.utils.data.Dataset):
-        def __init__(self, data, tfm):
-            self.data = data
-            self.tfm = tfm
-
-        def __len__(self):
-            return len(self.data)
-
-        def __getitem__(self, idx):
-            img, label = self.data[idx]
-            img = self.tfm(img)
-            return img, torch.tensor(label, dtype=torch.float32)
-
     train_loader = DataLoader(
-        ImageDataset(train_data, train_transform),
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=0,
-        pin_memory=True
+        PortraitDataset(train_data, train_transform),
+        batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True,
     )
-
     val_loader = DataLoader(
-        ImageDataset(val_data, val_transform),
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True
+        PortraitDataset(val_data, val_transform),
+        batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True,
     )
 
     # -------- Model --------

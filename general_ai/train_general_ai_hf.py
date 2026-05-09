@@ -67,7 +67,7 @@ def main():
 
     if os.path.exists(CACHE_FILE):
         print("Loading cached non-face dataset...")
-        filtered_samples = torch.load(CACHE_FILE, weights_only=False)
+        filtered_samples = torch.load(CACHE_FILE, weights_only=True)
     else:
         print("Filtering out face images (first run only)...")
         filtered_samples = []

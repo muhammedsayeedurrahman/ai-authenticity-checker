@@ -55,6 +55,7 @@ class CalibrationConfig:
     """Score calibration parameters."""
     temperature: float = 1.2
     high_confidence_override: float = 0.60
+    per_model_temperatures: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -120,11 +121,17 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
     calibration = CalibrationConfig(
         temperature=calibration_raw.get("temperature", 1.2),
         high_confidence_override=calibration_raw.get("high_confidence_override", 0.60),
+        per_model_temperatures=calibration_raw.get("per_model_temperatures", {}),
     )
+
+    device = raw.get("device", "cpu")
+    if device == "auto":
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
     return AppConfig(
         models_dir=models_dir,
-        device=raw.get("device", "cpu"),
+        device=device,
         threshold=raw.get("threshold", 0.5),
         idle_unload_seconds=raw.get("idle_unload_seconds", 600),
         models=models,

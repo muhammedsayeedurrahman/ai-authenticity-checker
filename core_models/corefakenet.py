@@ -429,7 +429,7 @@ class FastVideoProcessor:
         self.model = CorefakeNet()
 
         checkpoint = torch.load(model_path, map_location=self.device,
-                                weights_only=False)
+                                weights_only=True)
         if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
             self.model.load_state_dict(checkpoint['model_state_dict'])
         else:

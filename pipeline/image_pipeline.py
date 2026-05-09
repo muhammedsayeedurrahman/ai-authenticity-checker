@@ -35,19 +35,19 @@ def load_models(models_dir="models"):
     """Load all three models and return them in eval mode."""
     face_model = FaceDeepfakeModel().to(device)
     face_model.load_state_dict(
-        torch.load(os.path.join(models_dir, "image_face_model.pth"), map_location=device, weights_only=False)
+        torch.load(os.path.join(models_dir, "image_face_model.pth"), map_location=device, weights_only=True)
     )
     face_model.eval()
 
     dino = DINOv2AuthModel().to(device)
     dino.load_state_dict(
-        torch.load(os.path.join(models_dir, "dinov2_auth_model.pth"), map_location=device, weights_only=False)
+        torch.load(os.path.join(models_dir, "dinov2_auth_model.pth"), map_location=device, weights_only=True)
     )
     dino.eval()
 
     eff = EfficientNetAuthModel().to(device)
     eff.load_state_dict(
-        torch.load(os.path.join(models_dir, "efficientnet_auth_model.pth"), map_location=device, weights_only=False)
+        torch.load(os.path.join(models_dir, "efficientnet_auth_model.pth"), map_location=device, weights_only=True)
     )
     eff.eval()
 

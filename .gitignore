@@ -8,6 +8,9 @@ models/face_detector/*.caffemodel
 # HuggingFace cache
 .hf_cache/
 
+# Downloaded dataset samples
+data/samples/
+
 # Python
 __pycache__/
 *.pyc
@@ -33,6 +36,9 @@ env/
 .DS_Store
 Thumbs.db
 
+
+# Database
+proofyx_history.db
 
 # Temp files
 *.tmp

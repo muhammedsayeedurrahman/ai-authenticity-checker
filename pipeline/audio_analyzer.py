@@ -257,12 +257,12 @@ class AudioAnalyzer:
         try:
             self.model = AudioDeepfakeCNN().to(self.device)
             self.model.load_state_dict(
-                torch.load(MODEL_PATH, map_location=self.device, weights_only=False)
+                torch.load(MODEL_PATH, map_location=self.device, weights_only=True)
             )
             self.model.eval()
             self.model_loaded = True
             print("Audio deepfake model loaded successfully")
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, KeyError) as e:
             print(f"Warning: Could not load audio model: {e}")
             self.model = None
 
@@ -407,7 +407,7 @@ class AudioAnalyzer:
                 "segment_results": segment_results,
             }
 
-        except Exception as e:
+        except (ValueError, RuntimeError, OSError) as e:
             return {
                 "media_type": "audio",
                 "error": str(e),

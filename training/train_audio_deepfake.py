@@ -36,7 +36,7 @@ BATCH_SIZE = 32
 EPOCHS = 20
 LR = 1e-3
 TRAIN_SPLIT = 0.85
-MAX_SAMPLES = 8000          # Total samples to collect
+MAX_SAMPLES = 50000         # 6x increase for robust audio detection
 MODEL_PATH = "models/audio_deepfake_model.pth"
 EARLY_STOPPING_PATIENCE = 5
 LABEL_SMOOTHING = 0.05
@@ -49,10 +49,11 @@ N_FFT = 2048
 HOP_LENGTH = 512
 MAX_DURATION = 5.0          # seconds (matches zo9999 training)
 
-# Dataset config — try multiple sources
+# Dataset config — try multiple sources (loader tries each, skips failures)
 HF_DATASETS = [
     "moibrahimovic/fake_or_real",
     "ud-nlp/real-vs-fake-human-voice-deepfake-audio",
+    "garystafford/deepfake-audio-detection",
 ]
 # ==========================================
 

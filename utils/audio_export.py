@@ -30,7 +30,7 @@ QUANTIZED_PATH = os.path.join(ROOT_DIR, "models", "audio_deepfake_model_int8.pth
 def export_onnx(model_path=MODEL_PATH, output_path=ONNX_PATH):
     """Export the audio model to ONNX format for mobile deployment."""
     model = AudioDeepfakeCNN()
-    model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=False))
+    model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
     model.eval()
 
     # Dummy input: (batch=1, channels=1, n_mels=91, time_steps=150)
@@ -57,7 +57,7 @@ def export_onnx(model_path=MODEL_PATH, output_path=ONNX_PATH):
 def quantize_dynamic(model_path=MODEL_PATH, output_path=QUANTIZED_PATH):
     """Apply dynamic INT8 quantization for smaller model size."""
     model = AudioDeepfakeCNN()
-    model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=False))
+    model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
     model.eval()
 
     # Dynamic quantization on Linear layers

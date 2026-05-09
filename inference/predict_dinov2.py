@@ -39,7 +39,7 @@ print("Model last modified:", os.path.getmtime(model_path))
 
 model = DINOv2ImageDetector().to(device)
 model.load_state_dict(
-    torch.load(model_path, map_location=device, weights_only=False)
+    torch.load(model_path, map_location=device, weights_only=True)
 )
 model.eval()
 

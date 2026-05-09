@@ -56,13 +56,13 @@ clip_transform = transforms.Compose([
 # -------- Load Models --------
 face_model = FaceDeepfakeModel().to(device)
 face_model.load_state_dict(
-    torch.load("models/image_face_model.pth", map_location=device, weights_only=False)
+    torch.load("models/image_face_model.pth", map_location=device, weights_only=True)
 )
 face_model.eval()
 
 general_model = GeneralAIImageDetector(device).to(device)
 general_model.load_state_dict(
-    torch.load("models/general_ai_model.pth", map_location=device, weights_only=False)
+    torch.load("models/general_ai_model.pth", map_location=device, weights_only=True)
 )
 general_model.eval()
 

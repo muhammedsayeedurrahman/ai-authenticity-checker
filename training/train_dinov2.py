@@ -15,9 +15,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torchvision import transforms
-from datasets import load_dataset
 
 from core_models.dinov2_auth_model import DINOv2AuthModel
+from training.dataset_portraits import load_portrait_dataset, PortraitDataset
 
 # ================= CONFIG =================
 BATCH_SIZE = 16
@@ -25,7 +25,7 @@ EPOCHS = 15
 BACKBONE_LR = 1e-5
 HEAD_LR = 1e-3
 TRAIN_SPLIT = 0.85
-MAX_SAMPLES = 2000
+MAX_SAMPLES = 20000
 EARLY_STOPPING_PATIENCE = 5
 LABEL_SMOOTHING = 0.05
 MODEL_PATH = "models/dinov2_auth_model.pth"
@@ -62,67 +62,25 @@ def main():
         )
     ])
 
-    # -------- Load dataset via streaming (avoids full download) --------
-    print("Loading Hugging Face dataset (streaming)...")
-    stream = load_dataset(
-        "Hemg/AI-Generated-vs-Real-Images-Datasets",
-        split="train",
-        streaming=True
-    ).shuffle(seed=42, buffer_size=5000)
-
-    print(f"Collecting {MAX_SAMPLES} samples...")
-    samples = []
-    for i, sample in enumerate(stream):
-        if i >= MAX_SAMPLES:
-            break
-        img = sample["image"].convert("RGB")
-        label = sample["label"]  # 0=real, 1=AI
-        samples.append((img, label))
-    print(f"Collected {len(samples)} samples")
-
-    # -------- Train / Val split --------
-    split_idx = int(len(samples) * TRAIN_SPLIT)
-    train_samples = samples[:split_idx]
-    val_samples = samples[split_idx:]
+    # -------- Load multi-source portrait dataset (8 HF sources) --------
+    print(f"Loading multi-source portrait dataset ({MAX_SAMPLES} samples)...")
+    train_samples, val_samples = load_portrait_dataset(
+        max_samples=MAX_SAMPLES,
+        train_split=TRAIN_SPLIT,
+        face_align=True,
+    )
 
     print(f"Train samples: {len(train_samples)}")
     print(f"Val samples  : {len(val_samples)}")
 
-    # -------- Dataset wrapper --------
-    class ImageDataset(torch.utils.data.Dataset):
-        def __init__(self, data, tfm):
-            self.data = data
-            self.tfm = tfm
-
-        def __len__(self):
-            return len(self.data)
-
-        def __getitem__(self, idx):
-            img, label = self.data[idx]
-            return self.tfm(img), torch.tensor(label, dtype=torch.float32)
-
     train_loader = DataLoader(
-        ImageDataset(train_samples, train_transform),
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=0,
-        pin_memory=True
+        PortraitDataset(train_samples, train_transform),
+        batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True,
     )
-
     val_loader = DataLoader(
-        ImageDataset(val_samples, val_transform),
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True
+        PortraitDataset(val_samples, val_transform),
+        batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True,
     )
-
-    # -------- Class weighting --------
-    labels = [s[1] for s in train_samples]
-    real_count = labels.count(0)
-    ai_count = labels.count(1)
-
-    print(f"Class balance -> Real: {real_count}, AI: {ai_count}")
 
     # -------- Model --------
     model = DINOv2AuthModel().to(device)

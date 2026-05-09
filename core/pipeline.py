@@ -120,12 +120,12 @@ class ModelRegistry:
             cls = getattr(mod, class_name)
             model = cls().to(self.device)
             model.load_state_dict(
-                torch.load(str(path), map_location=self.device, weights_only=False)
+                torch.load(str(path), map_location=self.device, weights_only=True)
             )
             model.eval()
             self.models[name] = model
             self.loaded.append(name)
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, ImportError, KeyError) as e:
             logger.warning("Could not load %s: %s", name, e)
             self.missing.append(f"{name} (error)")
 
@@ -142,12 +142,12 @@ class ModelRegistry:
                 n_inputs = cfg.n_inputs
             model = FusionMLP(n_inputs=n_inputs).to(self.device)
             model.load_state_dict(
-                torch.load(str(path), map_location=self.device, weights_only=False)
+                torch.load(str(path), map_location=self.device, weights_only=True)
             )
             model.eval()
             self.models["fusion"] = model
             self.loaded.append("fusion")
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, ImportError, KeyError) as e:
             logger.warning("Could not load FusionMLP: %s", e)
             self.missing.append("fusion (error)")
 
@@ -159,7 +159,7 @@ class ModelRegistry:
         try:
             from core_models.corefakenet import CorefakeNet
             model = CorefakeNet().to(self.device)
-            ckpt = torch.load(str(path), map_location=self.device, weights_only=False)
+            ckpt = torch.load(str(path), map_location=self.device, weights_only=True)
             if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
                 model.load_state_dict(ckpt["model_state_dict"])
             else:
@@ -169,7 +169,7 @@ class ModelRegistry:
             self.loaded.append("corefakenet")
             epoch = ckpt.get("epoch", "?") if isinstance(ckpt, dict) else "?"
             logger.info("CorefakeNet loaded (epoch %s)", epoch)
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, ImportError, KeyError) as e:
             logger.warning("Could not load CorefakeNet: %s", e)
             self.missing.append("corefakenet (error)")
 
@@ -184,7 +184,7 @@ class ModelRegistry:
             self.vit_processor = ViTImageProcessor.from_pretrained(model_id)
             self.vit_model.eval()
             self.loaded.append("vit")
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, ImportError, KeyError) as e:
             logger.warning("Could not load ViT: %s", e)
             self.missing.append("vit")
 
@@ -202,7 +202,7 @@ class ModelRegistry:
                 freq_cnn=self.models.get("frequency"),
                 fusion_mlp=self.models.get("fusion"),
             )
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, ImportError, KeyError) as e:
             logger.warning("Could not init VideoAnalyzer: %s", e)
 
     def _init_audio_analyzer(self) -> None:
@@ -213,7 +213,7 @@ class ModelRegistry:
                 self.loaded.append("audio")
             else:
                 self.missing.append("audio")
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, ImportError, KeyError) as e:
             logger.warning("Could not init AudioAnalyzer: %s", e)
 
     def get_status(self) -> dict[str, Any]:
@@ -400,14 +400,20 @@ def _analyze_image_ensemble(
     if fusion_mlp is not None:
         final_risk = fusion_mlp.predict(
             vit=scores.get("vit", 0.0),
-            efficientnet=scores.get("texture", 0.0),
+            efficientnet=scores.get("efficientnet", 0.0),
             forensic=scores.get("forensic", 0.0),
             frequency=scores.get("frequency", 0.0),
+            face=scores.get("face", 0.0),
+            dino=scores.get("dino", 0.0),
+            texture=scores.get("texture", 0.0),
         )
     else:
         fusion_mode = "weighted_avg"
         cal = config.calibration
-        cal_scores = {k: calibrate_score(v, cal.temperature) for k, v in scores.items()}
+        cal_scores = {
+            k: calibrate_score(v, cal.per_model_temperatures.get(k, cal.temperature))
+            for k, v in scores.items()
+        }
 
         use_boosted = (
             has_face and "face" in scores and scores["face"] > 0.6
@@ -418,8 +424,10 @@ def _analyze_image_ensemble(
         weighted_sum = 0.0
         for key, cal_val in cal_scores.items():
             if key in weights:
-                weighted_sum += weights[key] * cal_val
-                total_weight += weights[key]
+                confidence = abs(cal_val - 0.5) * 2.0  # 0=uncertain, 1=confident
+                effective_weight = weights[key] * (0.5 + 0.5 * confidence)
+                weighted_sum += effective_weight * cal_val
+                total_weight += effective_weight
         final_risk = weighted_sum / total_weight if total_weight > 0 else 0.0
 
         # High-confidence override
@@ -451,7 +459,7 @@ def _analyze_image_ensemble(
             eff_model=reg.models.get("efficientnet"),
             dino_model=reg.models.get("dino"),
         )
-    except Exception as e:
+    except (RuntimeError, ValueError, TypeError) as e:
         logger.warning("GradCAM failed: %s", e)
 
     # Explainability
@@ -466,7 +474,7 @@ def _analyze_image_ensemble(
     try:
         from utils.explainability import explain_risk
         explanation = explain_risk(final_risk, model_scores_for_explain)
-    except Exception:
+    except (RuntimeError, ValueError, TypeError):
         explanation = ""
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -530,7 +538,7 @@ def _analyze_image_fast(
     try:
         from utils.explainability import explain_risk
         explanation = explain_risk(final_risk, model_scores_for_explain)
-    except Exception:
+    except (RuntimeError, ValueError, TypeError):
         explanation = ""
 
     # GradCAM
@@ -542,7 +550,7 @@ def _analyze_image_fast(
             eff_model=reg.models.get("efficientnet"),
             dino_model=reg.models.get("dino"),
         )
-    except Exception:
+    except (RuntimeError, ValueError, TypeError):
         pass
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -755,7 +763,7 @@ def analyze_multimodal(
              for k, v in modality_scores.items()},
             final_score,
         )
-    except Exception:
+    except (RuntimeError, ValueError, TypeError):
         explanation = ""
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000

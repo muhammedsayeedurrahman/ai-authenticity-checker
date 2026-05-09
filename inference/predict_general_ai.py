@@ -19,7 +19,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # -------- Load model --------
 model = GeneralAIImageDetector(device).to(device)
 model.load_state_dict(
-    torch.load("models/general_ai_model.pth", map_location=device, weights_only=False)
+    torch.load("models/general_ai_model.pth", map_location=device, weights_only=True)
 )
 model.eval()
 

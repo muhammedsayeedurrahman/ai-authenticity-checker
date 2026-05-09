@@ -10,7 +10,7 @@ The fusion layer learns:
   - Per-model temperature calibration (Task 5)
   - Optimal combination weights via MLP (Task 1)
 
-Input:  [vit_score, efficientnet_score, forensic_score, frequency_score]
+Input:  [vit, efficientnet, forensic, frequency, face, dino, texture]
 Output: models/fusion_mlp.pth
 
 Usage:
@@ -37,6 +37,9 @@ from torchvision import transforms
 from core_models.fusion_mlp import FusionMLP
 from core_models.efficientnet_texture import EfficientNetTexture
 from core_models.frequency_cnn import FrequencyCNN, fft_to_tensor
+from core_models.dinov2_auth_model import DINOv2AuthModel
+from core_models.efficientnet_auth_model import EfficientNetAuthModel
+from core_models.face_deepfake_model import FaceDeepfakeModel
 from training.dataset_portraits import (
     load_portrait_dataset, PortraitDataset, VAL_TRANSFORM,
 )
@@ -45,7 +48,7 @@ from training.dataset_portraits import (
 FUSION_EPOCHS = 50
 FUSION_LR = 1e-3
 FUSION_BATCH = 64
-MAX_SAMPLES = 2000          # Held-out set for fusion training
+MAX_SAMPLES = 10000         # 5x increase for fusion training
 MODEL_PATH = "models/fusion_mlp.pth"
 MODELS_DIR = "models"
 # -------------------------
@@ -60,7 +63,7 @@ def _load_vit(device):
         processor = ViTImageProcessor.from_pretrained(model_id)
         model.eval()
         return model, processor
-    except Exception as e:
+    except Exception as e:  # Broad catch: HF model loading can fail in many ways
         print(f"WARNING: Could not load ViT: {e}")
         return None, None
 
@@ -72,7 +75,7 @@ def _load_efficientnet(device):
         print(f"WARNING: {path} not found")
         return None
     model = EfficientNetTexture().to(device)
-    model.load_state_dict(torch.load(path, map_location=device, weights_only=False))
+    model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
     model.eval()
     return model
 
@@ -84,7 +87,43 @@ def _load_frequency(device):
         print(f"WARNING: {path} not found")
         return None
     model = FrequencyCNN().to(device)
-    model.load_state_dict(torch.load(path, map_location=device, weights_only=False))
+    model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+    model.eval()
+    return model
+
+
+def _load_face(device):
+    """Load trained Face Deepfake model."""
+    path = os.path.join(MODELS_DIR, "image_face_model.pth")
+    if not os.path.exists(path):
+        print(f"WARNING: {path} not found")
+        return None
+    model = FaceDeepfakeModel().to(device)
+    model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+    model.eval()
+    return model
+
+
+def _load_dino(device):
+    """Load trained DINOv2 model."""
+    path = os.path.join(MODELS_DIR, "dinov2_auth_model.pth")
+    if not os.path.exists(path):
+        print(f"WARNING: {path} not found")
+        return None
+    model = DINOv2AuthModel().to(device)
+    model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+    model.eval()
+    return model
+
+
+def _load_efficientnet_auth(device):
+    """Load trained EfficientNet Auth model."""
+    path = os.path.join(MODELS_DIR, "efficientnet_auth_model.pth")
+    if not os.path.exists(path):
+        print(f"WARNING: {path} not found")
+        return None
+    model = EfficientNetAuthModel().to(device)
+    model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
     model.eval()
     return model
 
@@ -95,7 +134,7 @@ def collect_predictions(device):
     (per-model scores, true label) pairs for fusion training.
 
     Returns:
-        scores_tensor: (N, 4) — [vit, efficient, forensic, frequency]
+        scores_tensor: (N, 7) — [vit, efficientnet, forensic, frequency, face, dino, texture]
         labels_tensor: (N,) — 0=real, 1=fake
     """
     print("\n--- Collecting model predictions for fusion training ---\n")
@@ -104,6 +143,9 @@ def collect_predictions(device):
     vit_model, vit_processor = _load_vit(device)
     eff_model = _load_efficientnet(device)
     freq_model = _load_frequency(device)
+    face_model = _load_face(device)
+    dino_model = _load_dino(device)
+    effauth_model = _load_efficientnet_auth(device)
 
     # Load dataset — skip samples used by component models to avoid data leakage.
     # Component models (EfficientNet texture, Frequency CNN) train on the first
@@ -113,7 +155,7 @@ def collect_predictions(device):
         max_samples=MAX_SAMPLES,
         train_split=1.0,
         face_align=True,
-        skip_per_class=500,  # Skip component training data
+        skip_per_class=3000,  # Skip component training data (larger with 10x samples)
         seed=123,            # Different seed from component training
     )
 
@@ -125,18 +167,21 @@ def collect_predictions(device):
     print(f"Collecting predictions from {len(val_data)} samples...")
 
     for img, label in tqdm(val_data, desc="Scoring"):
-        scores = [0.0, 0.0, 0.0, 0.0]  # vit, eff, forensic, freq
+        # [vit, efficientnet, forensic, frequency, face, dino, texture]
+        scores = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        img_rgb = img.convert("RGB")
+        tensor = val_transform(img_rgb).unsqueeze(0).to(device)
 
         # ViT score
         if vit_model is not None and vit_processor is not None:
             try:
                 inputs = vit_processor(
-                    images=img.convert("RGB"), return_tensors="pt"
+                    images=img_rgb, return_tensors="pt"
                 ).to(device)
                 with torch.no_grad():
                     logits = vit_model(**inputs).logits
                     probs = torch.softmax(logits, dim=1)
-                    # Find fake class
                     fake_idx = [
                         k for k, v in vit_model.config.id2label.items()
                         if "fake" in v.lower()
@@ -145,23 +190,22 @@ def collect_predictions(device):
                         probs[0][fake_idx[0]].item()
                         if fake_idx else probs[0][1].item()
                     )
-            except Exception:
+            except Exception:  # Broad catch: ViT inference varies across image inputs
                 pass
 
-        # EfficientNet texture score
-        if eff_model is not None:
+        # EfficientNet Auth score
+        if effauth_model is not None:
             try:
-                tensor = val_transform(img.convert("RGB")).unsqueeze(0).to(device)
                 with torch.no_grad():
-                    scores[1] = eff_model(tensor).item()
-            except Exception:
+                    scores[1] = effauth_model(tensor).item()
+            except Exception:  # Broad catch: model can fail on edge-case images
                 pass
 
         # Forensic score (heuristic — kept as input feature)
         try:
-            from app import forensic_score
+            from core.pipeline import forensic_score
             scores[2] = forensic_score(img)
-        except Exception:
+        except Exception:  # Broad catch: forensic heuristic may fail on unusual images
             scores[2] = 0.0
 
         # Frequency CNN score
@@ -170,7 +214,32 @@ def collect_predictions(device):
                 fft_tensor = fft_to_tensor(img).unsqueeze(0).to(device)
                 with torch.no_grad():
                     scores[3] = freq_model(fft_tensor).item()
-            except Exception:
+            except Exception:  # Broad catch: FFT can fail on edge-case images
+                pass
+
+        # Face model score
+        if face_model is not None:
+            try:
+                with torch.no_grad():
+                    real_prob = face_model(tensor).item()
+                    scores[4] = 1.0 - real_prob  # P(real) -> P(fake)
+            except Exception:  # Broad catch: face model can fail on non-face images
+                pass
+
+        # DINOv2 score
+        if dino_model is not None:
+            try:
+                with torch.no_grad():
+                    scores[5] = dino_model(tensor).item()
+            except Exception:  # Broad catch: DINO can fail on edge-case images
+                pass
+
+        # Texture (EfficientNet-B4) score
+        if eff_model is not None:
+            try:
+                with torch.no_grad():
+                    scores[6] = eff_model(tensor).item()
+            except Exception:  # Broad catch: texture model can fail on edge-case images
                 pass
 
         all_scores.append(scores)
@@ -180,10 +249,9 @@ def collect_predictions(device):
     labels_tensor = torch.tensor(all_labels, dtype=torch.float32)
 
     print(f"\nCollected {len(all_scores)} prediction vectors")
-    print(f"Score means: vit={scores_tensor[:, 0].mean():.3f}, "
-          f"eff={scores_tensor[:, 1].mean():.3f}, "
-          f"forensic={scores_tensor[:, 2].mean():.3f}, "
-          f"freq={scores_tensor[:, 3].mean():.3f}")
+    names = ["vit", "eff_auth", "forensic", "freq", "face", "dino", "texture"]
+    means = [f"{names[i]}={scores_tensor[:, i].mean():.3f}" for i in range(7)]
+    print(f"Score means: {', '.join(means)}")
     print(f"Labels: {(labels_tensor == 1).sum().item()} fake, "
           f"{(labels_tensor == 0).sum().item()} real")
 
@@ -217,7 +285,7 @@ def train_fusion(scores, labels, device):
     val_loader = DataLoader(val_ds, batch_size=FUSION_BATCH, shuffle=False)
 
     # Model
-    model = FusionMLP(n_inputs=4).to(device)
+    model = FusionMLP(n_inputs=7).to(device)
     criterion = nn.BCELoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=FUSION_LR, weight_decay=1e-3)
     scheduler = CosineAnnealingLR(optimizer, T_max=FUSION_EPOCHS, eta_min=1e-5)

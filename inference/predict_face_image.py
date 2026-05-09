@@ -16,7 +16,7 @@ print("Using device:", device)
 
 model = FaceDeepfakeModel().to(device)
 model.load_state_dict(
-    torch.load("models/image_face_model.pth", map_location=device, weights_only=False)
+    torch.load("models/image_face_model.pth", map_location=device, weights_only=True)
 )
 model.eval()
 

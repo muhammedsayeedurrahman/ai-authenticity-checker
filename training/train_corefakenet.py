@@ -42,7 +42,7 @@ from training.dataset_portraits import load_portrait_dataset, PortraitDataset
 # ================= CONFIG =================
 BATCH_SIZE = 4                  # B4 at 380x380 is memory-heavy on CPU
 EPOCHS = 30
-MAX_SAMPLES = 3000              # CPU-practical; balanced across 3 HF sources
+MAX_SAMPLES = 30000             # 10x increase; balanced across 8 HF sources
 TRAIN_SPLIT = 0.85
 MODEL_PATH = "models/corefakenet.pth"
 EARLY_STOPPING_PATIENCE = 10

@@ -1,6 +1,6 @@
 {
   "models_dir": "models",
-  "device": "cpu",
+  "device": "auto",
   "threshold": 0.5,
   "idle_unload_seconds": 600,
 
@@ -58,8 +58,8 @@
     "path": "fusion_mlp.pth",
     "weight": null,
     "enabled": true,
-    "n_inputs": 4,
-    "description": "Learned fusion with temperature calibration"
+    "n_inputs": 7,
+    "description": "Learned fusion with temperature calibration (7 models)"
   },
   "corefakenet": {
     "type": "local",
@@ -92,7 +92,16 @@
 
   "calibration": {
     "temperature": 1.2,
-    "high_confidence_override": 0.60
+    "high_confidence_override": 0.60,
+    "per_model_temperatures": {
+      "vit": 1.0,
+      "texture": 1.3,
+      "frequency": 1.5,
+      "face": 1.1,
+      "dino": 1.4,
+      "efficientnet": 1.3,
+      "forensic": 1.8
+    }
   },
 
   "audio": {

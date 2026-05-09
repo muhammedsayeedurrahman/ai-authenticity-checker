@@ -1,0 +1,23 @@
+services:
+  proofyx:
+    build: .
+    ports:
+      - "7861:7861"
+    env_file:
+      - .env
+    volumes:
+      - ./models:/app/models:ro
+      - proofyx-data:/app/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  proofyx-data:
