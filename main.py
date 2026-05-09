@@ -47,12 +47,30 @@ logger = logging.getLogger("proofyx")
 # FastAPI App
 # ──────────────────────────────────────────────
 
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Eagerly load ML models at startup so the first request isn't slow."""
+    from core.pipeline import get_registry
+
+    logger.info("Loading ML models (this may take a moment on first run)...")
+    reg = get_registry()
+    logger.info(
+        "Model loading complete: %d loaded, %d missing",
+        len(reg.loaded), len(reg.missing),
+    )
+    yield
+
+
 app = FastAPI(
     title="ProofyX API",
     description="AI-powered multimodal deepfake & manipulation detection",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # ──────────────────────────────────────────────

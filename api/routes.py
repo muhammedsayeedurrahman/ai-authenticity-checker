@@ -43,6 +43,12 @@ router = APIRouter()
 history = AnalysisHistory()
 limiter = Limiter(key_func=get_remote_address)
 
+# Serialize GPU inference — prevents concurrent model.forward() calls from
+# corrupting CUDA state or producing wrong results.  Set > 1 only if models
+# are isolated per-worker or you have verified thread-safe inference.
+_MAX_CONCURRENT_INFERENCE = int(os.environ.get("PROOFYX_MAX_CONCURRENT", "1"))
+_inference_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_INFERENCE)
+
 # ──────────────────────────────────────────────
 # Upload Validation Constants
 # ──────────────────────────────────────────────
@@ -125,8 +131,21 @@ async def _run_with_timeout(
 ) -> Any:
     """Run a sync function in a thread pool with a timeout.
 
-    Raises HTTP 504 if the function does not complete within *timeout* seconds.
+    Acquires the inference semaphore first to prevent concurrent GPU access,
+    then runs *fn* in a worker thread with *timeout* seconds deadline.
+    Raises HTTP 504 on timeout, HTTP 503 if the semaphore cannot be acquired
+    within 5 seconds (server overloaded).
     """
+    try:
+        acquired = await asyncio.wait_for(
+            _inference_semaphore.acquire(), timeout=5.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Server busy — too many concurrent analysis requests",
+        )
+
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(fn, *args, **kwargs),
@@ -140,6 +159,8 @@ async def _run_with_timeout(
             status_code=504,
             detail=f"Analysis timed out after {timeout}s",
         )
+    finally:
+        _inference_semaphore.release()
 
 
 # ──────────────────────────────────────────────

@@ -14,6 +14,7 @@ import math
 import os
 import sys
 import tempfile
+import threading
 import time
 import logging
 from typing import Any, Callable, Optional
@@ -226,16 +227,24 @@ class ModelRegistry:
 
 
 # ──────────────────────────────────────────────
-# Module-level registry singleton
+# Module-level registry singleton (thread-safe)
 # ──────────────────────────────────────────────
 
 _registry: Optional[ModelRegistry] = None
+_registry_lock = threading.Lock()
 
 
 def get_registry() -> ModelRegistry:
+    """Return the shared ModelRegistry, creating it on first call.
+
+    Uses double-checked locking so that concurrent threads never
+    construct two registries or read a half-initialized instance.
+    """
     global _registry
     if _registry is None:
-        _registry = ModelRegistry()
+        with _registry_lock:
+            if _registry is None:
+                _registry = ModelRegistry()
     return _registry
 
 

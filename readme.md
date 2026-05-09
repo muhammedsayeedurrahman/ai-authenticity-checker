@@ -167,6 +167,7 @@ proofyx/
 | `PROOFYX_TIMEOUT_VIDEO` | Video analysis timeout (seconds) | `180` |
 | `PROOFYX_TIMEOUT_AUDIO` | Audio analysis timeout (seconds) | `90` |
 | `PROOFYX_TIMEOUT_MULTIMODAL` | Multimodal analysis timeout (seconds) | `300` |
+| `PROOFYX_MAX_CONCURRENT` | Max concurrent GPU inference requests | `1` |
 
 See `.env.example` for the full list.
 

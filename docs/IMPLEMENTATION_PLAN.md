@@ -114,9 +114,32 @@ CorefakeNet achieves Xx speedup over 7-model ensemble with Y% accuracy retention
   - `PROOFYX_TIMEOUT_AUDIO` (default 90s)
   - `PROOFYX_TIMEOUT_MULTIMODAL` (default 300s)
 
-#### 2.3 Increase Worker Count
+#### 2.3 GPU Inference Serialization -- DONE
+
+**File:** `api/routes.py`
+
+- [x] Add `asyncio.Semaphore(1)` to serialize GPU inference across requests
+- [x] Semaphore acquired before `asyncio.to_thread()`, released in `finally`
+- [x] Returns HTTP 503 if semaphore not acquired within 5s (server busy)
+- [x] Configurable via `PROOFYX_MAX_CONCURRENT` env var (default 1)
+
+#### 2.3b Thread-Safe ModelRegistry -- DONE
+
+**File:** `core/pipeline.py`
+
+- [x] Add `threading.Lock` around `get_registry()` singleton initialization
+- [x] Double-checked locking prevents duplicate registry construction
+- [x] Concurrent threads safely share a single initialized registry
+
+#### 2.3c Eager Model Loading on Startup -- DONE
 
 **File:** `main.py`
+
+- [x] Add FastAPI `lifespan` context manager that calls `get_registry()` at boot
+- [x] Models loaded before first request arrives (no cold-start timeout)
+- [x] Startup log reports count of loaded/missing models
+
+#### 2.3d Increase Worker Count (Future)
 
 - [ ] Change to `workers=4` (or configurable via `PROOFYX_WORKERS` env var)
 - [ ] Add `--preload` flag to share model memory across workers
