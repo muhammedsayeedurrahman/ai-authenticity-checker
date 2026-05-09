@@ -9,6 +9,7 @@ Uses the "Quiet Confidence" design system tokens.
 from __future__ import annotations
 
 import json
+from html import escape
 from typing import Any, Optional
 
 
@@ -50,6 +51,7 @@ def generate_gauge_html(risk_pct: float, label: str = "Risk Score") -> str:
     radius = 80
     circumference = 2 * 3.14159 * radius
     offset = circumference * (1 - risk_pct / 100)
+    escaped_label = escape(str(label))
 
     if risk_pct > 70:
         color = "#EF4444"
@@ -60,7 +62,7 @@ def generate_gauge_html(risk_pct: float, label: str = "Risk Score") -> str:
 
     return f"""
     <div style="display:flex;flex-direction:column;align-items:center;padding:24px 0;"
-         role="meter" aria-label="{label}" aria-valuenow="{risk_pct:.0f}"
+         role="meter" aria-label="{escaped_label}" aria-valuenow="{risk_pct:.0f}"
          aria-valuemin="0" aria-valuemax="100">
         <div class="card-3d" style="display:inline-block;">
             <div class="card-3d-inner" style="padding:8px;">
@@ -83,7 +85,7 @@ def generate_gauge_html(risk_pct: float, label: str = "Risk Score") -> str:
                     <text x="100" y="115" text-anchor="middle" fill="#71717A"
                           font-size="11" font-weight="500" font-family="Inter,sans-serif"
                           text-transform="uppercase" letter-spacing="0.1em">
-                        {label}
+                        {escaped_label}
                     </text>
                 </svg>
             </div>
@@ -115,7 +117,7 @@ def generate_score_bars_html(scores_dict: dict[str, float]) -> str:
         bars_html += f"""
         <div style="margin-bottom:10px;animation:slide-up 0.4s ease-out {delay_ms}ms both;">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                <span style="color:#A1A1AA;font-size:0.78rem;font-weight:500;">{name}</span>
+                <span style="color:#A1A1AA;font-size:0.78rem;font-weight:500;">{escape(str(name))}</span>
                 <span style="color:{color};font-size:0.78rem;font-weight:700;">{pct:.1f}%</span>
             </div>
             <div style="height:6px;background:rgba(255,255,255,0.04);border-radius:3px;overflow:hidden;">
@@ -193,7 +195,7 @@ def generate_verdict_html(verdict_str: str) -> str:
             <span style="font-weight:700;font-size:0.78rem;color:{color};
                          text-transform:uppercase;letter-spacing:0.06em;">Verdict</span>
         </div>
-        <div style="color:#A1A1AA;font-size:0.82rem;line-height:1.6;">{verdict_str}</div>
+        <div style="color:#A1A1AA;font-size:0.82rem;line-height:1.6;">{escape(str(verdict_str))}</div>
     </div>
     """
 
@@ -213,8 +215,8 @@ def generate_top_nav(
     fast_tag = ' <span style="color:#6366F1;font-size:0.7rem;">FAST</span>' if corefakenet_ready else ""
 
     logo_html = ""
-    if logo_url:
-        logo_html = f'<img src="{logo_url}" alt="ProofyX logo" />'
+    if logo_url and logo_url.startswith(("http://", "https://", "data:image/", "/")):
+        logo_html = f'<img src="{escape(logo_url)}" alt="ProofyX logo" />'
 
     return f"""
     <div class="top-nav-bar">
@@ -265,7 +267,7 @@ def generate_modules_panel(
         items += f"""
         <div class="module-item">
             <span class="{dot_class}"></span>
-            <span style="color:{text_color};font-size:0.78rem;">{name}</span>
+            <span style="color:{text_color};font-size:0.78rem;">{escape(str(name))}</span>
         </div>"""
 
     return f"""
@@ -293,7 +295,7 @@ def generate_agreement_html(agreement: str) -> str:
                 border:1px solid rgba(255,255,255,0.04);
                 color:#A1A1AA;font-size:0.78rem;font-weight:500;"
          role="status">
-        {agreement}
+        {escape(str(agreement))}
     </div>
     """
 
@@ -308,7 +310,7 @@ def generate_exif_html(metadata: dict[str, Any]) -> str:
         findings = metadata.get("exif_findings", []) if metadata else []
         findings_html = "".join(
             f'<div style="display:flex;align-items:center;gap:6px;color:#EAB308;font-size:0.75rem;padding:2px 0;">'
-            f'<span style="display:flex;">{_ICON_ALERT}</span>{f}</div>'
+            f'<span style="display:flex;">{_ICON_ALERT}</span>{escape(str(f))}</div>'
             for f in findings
         )
         return f"""
@@ -328,14 +330,14 @@ def generate_exif_html(metadata: dict[str, Any]) -> str:
             rows += f"""
             <div style="display:flex;justify-content:space-between;padding:6px 0;
                         border-bottom:1px solid rgba(255,255,255,0.03);">
-                <span style="color:#71717A;font-size:0.75rem;font-weight:500;">{key}</span>
-                <span style="color:#A1A1AA;font-size:0.75rem;">{val}</span>
+                <span style="color:#71717A;font-size:0.75rem;font-weight:500;">{escape(str(key))}</span>
+                <span style="color:#A1A1AA;font-size:0.75rem;">{escape(str(val))}</span>
             </div>"""
 
     findings = metadata.get("exif_findings", [])
     findings_html = "".join(
         f'<div style="display:flex;align-items:center;gap:6px;color:#EAB308;font-size:0.75rem;padding:3px 0;">'
-        f'<span style="display:flex;">{_ICON_ALERT}</span>{f}</div>'
+        f'<span style="display:flex;">{_ICON_ALERT}</span>{escape(str(f))}</div>'
         for f in findings
     )
 
@@ -377,13 +379,13 @@ def generate_history_html(entries: list[dict[str, Any]]) -> str:
         rows += f"""
         <tr>
             <td><code style="color:#6366F1;font-size:0.72rem;background:rgba(99,102,241,0.08);
-                            padding:2px 6px;border-radius:4px;">{entry.get('id', '')}</code></td>
-            <td>{entry.get('timestamp', '')[:19]}</td>
+                            padding:2px 6px;border-radius:4px;">{escape(str(entry.get('id', '')))}</code></td>
+            <td>{escape(str(entry.get('timestamp', ''))[:19])}</td>
             <td><span style="color:#71717A;font-size:0.72rem;text-transform:uppercase;
-                            letter-spacing:0.04em;">{entry.get('media_type', '').upper()}</span></td>
+                            letter-spacing:0.04em;">{escape(str(entry.get('media_type', '')).upper())}</span></td>
             <td><span style="color:{badge_color};font-weight:600;">{risk:.1f}%</span></td>
-            <td><span style="color:{badge_color};font-size:0.78rem;">{verdict}</span></td>
-            <td style="color:#71717A;">{entry.get('file_name', '')}</td>
+            <td><span style="color:{badge_color};font-size:0.78rem;">{escape(str(verdict))}</span></td>
+            <td style="color:#71717A;">{escape(str(entry.get('file_name', '')))}</td>
         </tr>"""
 
     return f"""
@@ -455,7 +457,7 @@ def generate_empty_state(message: str = "Upload media to begin analysis") -> str
         <div style="display:flex;justify-content:center;margin-bottom:12px;color:#3f3f46;">
             {_ICON_SHIELD}
         </div>
-        {message}
+        {escape(str(message))}
     </div>
     """
 

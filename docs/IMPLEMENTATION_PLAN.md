@@ -84,17 +84,22 @@ CorefakeNet achieves Xx speedup over 7-model ensemble with Y% accuracy retention
 
 ### Phase 2: Fix Security and Stability (HIGH -- Do Before Any Public Deployment)
 
-#### 2.1 Fix XSS Vulnerability
+#### 2.1 Fix XSS Vulnerability -- DONE
 
 **File:** `ui/components.py`
 
-- [ ] Add `from html import escape` at top
-- [ ] Escape all user-controlled data rendered in HTML:
-  - `file_name` (line ~386) -- uploaded filename
-  - `agreement` string (line ~296)
-  - EXIF `key`/`val` pairs (lines ~326-333)
-  - EXIF `findings` list (lines ~309-312)
-  - Model `name` fields (line ~268)
+- [x] Add `from html import escape` at top
+- [x] Escape all user-controlled data rendered in HTML:
+  - `file_name` -- uploaded filename
+  - `agreement` string
+  - EXIF `key`/`val` pairs
+  - EXIF `findings` list (both locations)
+  - Model `name` fields (score bars + modules panel)
+  - `verdict_str` in verdict card
+  - `label` in gauge (aria-label + SVG text)
+  - `logo_url` in img src (escaped + scheme-validated)
+  - `message` in empty state
+  - All history table entry fields (id, timestamp, media_type, verdict, file_name)
 
 #### 2.2 Add Request Timeouts
 
