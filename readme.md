@@ -163,6 +163,10 @@ proofyx/
 | `PROOFYX_API_KEY_2` | Fallback API key | _(none)_ |
 | `HF_TOKEN_1` | HuggingFace Hub token | _(none)_ |
 | `CORS_ORIGINS` | Comma-separated allowed origins | `localhost:7861` |
+| `PROOFYX_TIMEOUT_IMAGE` | Image analysis timeout (seconds) | `60` |
+| `PROOFYX_TIMEOUT_VIDEO` | Video analysis timeout (seconds) | `180` |
+| `PROOFYX_TIMEOUT_AUDIO` | Audio analysis timeout (seconds) | `90` |
+| `PROOFYX_TIMEOUT_MULTIMODAL` | Multimodal analysis timeout (seconds) | `300` |
 
 See `.env.example` for the full list.
 

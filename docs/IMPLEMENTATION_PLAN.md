@@ -101,14 +101,18 @@ CorefakeNet achieves Xx speedup over 7-model ensemble with Y% accuracy retention
   - `message` in empty state
   - All history table entry fields (id, timestamp, media_type, verdict, file_name)
 
-#### 2.2 Add Request Timeouts
+#### 2.2 Add Request Timeouts -- DONE
 
 **File:** `api/routes.py`
 
-- [ ] Add configurable timeout (default 60s for images, 120s for video, 60s for audio)
-- [ ] Use `asyncio.wait_for()` or `starlette` background task with timeout
-- [ ] Return HTTP 504 Gateway Timeout on expiry
-- [ ] Add `PROOFYX_TIMEOUT_SECONDS` env var
+- [x] Add per-media-type timeouts via `_run_with_timeout()` helper
+- [x] Use `asyncio.wait_for()` + `asyncio.to_thread()` to run sync analysis with deadline
+- [x] Return HTTP 504 Gateway Timeout on expiry with log warning
+- [x] Configurable via env vars:
+  - `PROOFYX_TIMEOUT_IMAGE` (default 60s)
+  - `PROOFYX_TIMEOUT_VIDEO` (default 180s)
+  - `PROOFYX_TIMEOUT_AUDIO` (default 90s)
+  - `PROOFYX_TIMEOUT_MULTIMODAL` (default 300s)
 
 #### 2.3 Increase Worker Count
 

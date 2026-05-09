@@ -5,13 +5,14 @@ All endpoints share the same core pipeline as the Gradio UI.
 Responses follow the envelope pattern: {success, data, error}.
 """
 
+import asyncio
 import io
 import logging
 import os
 import tempfile
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from fastapi import (
     APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile,
@@ -53,6 +54,12 @@ MAX_AUDIO_SIZE = 100 * 1024 * 1024  # 100 MB
 ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}
 ALLOWED_VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 ALLOWED_AUDIO_EXT = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
+
+# Per-media-type analysis timeouts (seconds), configurable via env vars
+TIMEOUT_IMAGE = int(os.environ.get("PROOFYX_TIMEOUT_IMAGE", "60"))
+TIMEOUT_VIDEO = int(os.environ.get("PROOFYX_TIMEOUT_VIDEO", "180"))
+TIMEOUT_AUDIO = int(os.environ.get("PROOFYX_TIMEOUT_AUDIO", "90"))
+TIMEOUT_MULTIMODAL = int(os.environ.get("PROOFYX_TIMEOUT_MULTIMODAL", "300"))
 
 # Magic bytes for image format validation
 MAGIC_BYTES: dict[str, list[bytes]] = {
@@ -110,6 +117,31 @@ def _safe_tmp_remove(path: Optional[str]) -> None:
             pass
 
 
+async def _run_with_timeout(
+    fn: Callable[..., Any],
+    timeout: int,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run a sync function in a thread pool with a timeout.
+
+    Raises HTTP 504 if the function does not complete within *timeout* seconds.
+    """
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(fn, *args, **kwargs),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Analysis timed out after %ds: %s", timeout, fn.__name__,
+        )
+        raise HTTPException(
+            status_code=504,
+            detail=f"Analysis timed out after {timeout}s",
+        )
+
+
 # ──────────────────────────────────────────────
 # API Key Authentication
 # ──────────────────────────────────────────────
@@ -156,7 +188,7 @@ async def api_analyze_image(
     except (OSError, ValueError, Image.DecompressionBombError):
         raise HTTPException(status_code=400, detail="Invalid image file")
 
-    result = analyze_image(image, mode=mode)
+    result = await _run_with_timeout(analyze_image, TIMEOUT_IMAGE, image, mode=mode)
 
     if "error" in result and result["error"]:
         return ImageAnalysisResponse(success=False, error=result["error"])
@@ -203,7 +235,9 @@ async def api_analyze_video(
             tmp.write(contents)
             tmp_path = tmp.name
 
-        result = analyze_video(tmp_path, fps=fps, aggregation=aggregation)
+        result = await _run_with_timeout(
+            analyze_video, TIMEOUT_VIDEO, tmp_path, fps=fps, aggregation=aggregation,
+        )
     finally:
         _safe_tmp_remove(tmp_path)
 
@@ -246,7 +280,7 @@ async def api_analyze_audio(
             tmp.write(contents)
             tmp_path = tmp.name
 
-        result = analyze_audio(tmp_path)
+        result = await _run_with_timeout(analyze_audio, TIMEOUT_AUDIO, tmp_path)
     finally:
         _safe_tmp_remove(tmp_path)
 
@@ -306,7 +340,8 @@ async def api_analyze_multimodal(
         if image_pil is None and video_path is None and audio_path is None:
             raise HTTPException(status_code=400, detail="No valid media files provided")
 
-        result = analyze_multimodal(
+        result = await _run_with_timeout(
+            analyze_multimodal, TIMEOUT_MULTIMODAL,
             image=image_pil, video_path=video_path, audio_path=audio_path,
         )
     finally:
