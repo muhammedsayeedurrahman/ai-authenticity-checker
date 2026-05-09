@@ -13,6 +13,10 @@ from PIL import Image
 @pytest.fixture()
 def _mock_registry():
     """Patch the model registry so tests don't load real ML models."""
+    # Pre-import so patch() can resolve the dotted path.
+    # This does NOT trigger model loading (get_registry is lazy).
+    import api.routes  # noqa: F401
+
     mock_reg = MagicMock()
     mock_reg.loaded = ["vit", "efficientnet"]
     mock_reg.missing = ["dino"]
