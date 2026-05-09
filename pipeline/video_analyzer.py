@@ -496,7 +496,7 @@ class ModelEnsemble:
 
             # CLIP ViT-L/14 deepfake detector
             if self.clip_deepfake is not None:
-                clip_prob = self.clip_deepfake.predict(model_input)
+                clip_prob = float(self.clip_deepfake.predict(model_input))
                 active_models += 1
 
         # Forensic analysis (heuristic, NOT a trained model — supplementary signal)

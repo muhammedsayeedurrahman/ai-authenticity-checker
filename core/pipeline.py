@@ -459,7 +459,7 @@ def _analyze_image_ensemble(
 
         # CLIP ViT-L/14 deepfake detector
         if reg.clip_deepfake is not None:
-            clip_score = reg.clip_deepfake.predict(model_input)
+            clip_score = float(reg.clip_deepfake.predict(model_input))
             scores["clip"] = clip_score
             active_models += 1
 
@@ -569,8 +569,11 @@ def _analyze_image_ensemble(
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
+    # Ensure all scores are native Python floats (not numpy/torch float32)
+    scores = {k: float(v) for k, v in scores.items()}
+
     return {
-        "risk_score": final_risk,
+        "risk_score": float(final_risk),
         "risk_percent": risk_pct,
         "verdict": verdict.value,
         "confidence": confidence.value,
