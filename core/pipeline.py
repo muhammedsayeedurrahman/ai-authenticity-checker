@@ -252,15 +252,38 @@ def get_registry() -> ModelRegistry:
 # Score Helpers
 # ──────────────────────────────────────────────
 
-def calibrate_score(score: float, temperature: float = 1.2) -> float:
-    """Apply temperature scaling for model score comparability."""
+def calibrate_score(score: float, temperature: float = 1.0) -> float:
+    """Apply temperature scaling (Platt calibration) for model score comparability.
+
+    NOTE: Temperatures are currently set to 1.0 (identity) because proper
+    calibration requires fitting on a held-out validation set per model.
+    When FusionMLP is loaded, its internal ModelCalibrator provides learned
+    per-model temperatures instead — this function is only used as a
+    fallback in the weighted_avg path.
+
+    To properly calibrate:
+        1. Collect model outputs on a held-out validation set
+        2. Fit temperature via NLL minimization per model
+        3. Update configs/models.json per_model_temperatures with fitted values
+    """
     score = max(min(score, 0.999), 0.001)
     logit = math.log(score / (1 - score))
     return 1.0 / (1.0 + math.exp(-logit / temperature))
 
 
-def forensic_score(img_pil: Image.Image) -> float:
-    """Detect manipulation via noise inconsistency and ELA."""
+def _heuristic_forensic_score(img_pil: Image.Image) -> float:
+    """Heuristic forensic signal based on noise inconsistency and ELA.
+
+    WARNING: This is NOT a trained ML model. It uses hand-crafted feature
+    extraction (Gaussian blur residual variance + JPEG Error Level Analysis)
+    with hardcoded thresholds. It provides a weak supplementary signal but
+    should NOT be weighted equally with trained models in the ensemble.
+
+    When FusionMLP is loaded, this signal is fed as one of 7 inputs — the
+    MLP was trained with these outputs and learns to weight them appropriately.
+    In the weighted_avg fallback, this receives a reduced weight (0.05 vs 0.15+
+    for trained models).
+    """
     import cv2
     from io import BytesIO
 
@@ -297,6 +320,10 @@ def forensic_score(img_pil: Image.Image) -> float:
 
     noise_score = min(max((noise_inconsistency - 0.5) / 0.6, 0.0), 1.0)
     return 0.6 * noise_score + 0.4 * ela_score
+
+
+# Public alias for backward compatibility (training scripts, tests)
+forensic_score = _heuristic_forensic_score
 
 
 # ──────────────────────────────────────────────
@@ -389,9 +416,8 @@ def _analyze_image_ensemble(
             scores["face"] = 1.0 - real_prob  # Convert P(real) → P(fake)
             active_models += 1
 
-    # Forensic (heuristic)
-    scores["forensic"] = forensic_score(image_pil)
-    active_models += 1
+    # Forensic heuristic (NOT a trained model — supplementary signal only)
+    scores["forensic"] = _heuristic_forensic_score(image_pil)
 
     # Frequency fallback
     if "frequency" not in scores and reg.freq_analyzer:
@@ -455,8 +481,9 @@ def _analyze_image_ensemble(
     confidence = Confidence.from_risk_score(final_risk)
     risk_level = RiskLevel.from_risk_score(final_risk)
 
-    # Model agreement
-    fake_count = sum(1 for v in scores.values() if v > 0.5)
+    # Model agreement (trained models only — excludes forensic heuristic)
+    trained_scores = {k: v for k, v in scores.items() if k != "forensic"}
+    fake_count = sum(1 for v in trained_scores.values() if v > 0.5)
     model_agreement = f"{fake_count}/{active_models} models detect manipulation"
 
     # GradCAM

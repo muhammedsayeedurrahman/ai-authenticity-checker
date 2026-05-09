@@ -72,35 +72,37 @@
   },
 
   "ensemble_weights": {
+    "_note": "forensic is a heuristic (not a trained model) — given minimal weight as supplementary signal",
     "default": {
-      "vit": 0.40,
-      "texture": 0.20,
-      "forensic": 0.15,
-      "frequency": 0.10,
-      "face": 0.10,
-      "dino": 0.05
+      "vit": 0.45,
+      "texture": 0.22,
+      "frequency": 0.11,
+      "face": 0.12,
+      "dino": 0.05,
+      "forensic": 0.05
     },
     "face_boosted": {
-      "vit": 0.35,
-      "texture": 0.15,
-      "forensic": 0.15,
-      "frequency": 0.10,
-      "face": 0.20,
-      "dino": 0.05
+      "vit": 0.40,
+      "texture": 0.17,
+      "frequency": 0.11,
+      "face": 0.22,
+      "dino": 0.05,
+      "forensic": 0.05
     }
   },
 
   "calibration": {
-    "temperature": 1.2,
+    "_note": "Temperatures set to 1.0 (identity) — proper Platt scaling requires a held-out validation set. Do NOT use arbitrary values.",
+    "temperature": 1.0,
     "high_confidence_override": 0.60,
     "per_model_temperatures": {
       "vit": 1.0,
-      "texture": 1.3,
-      "frequency": 1.5,
-      "face": 1.1,
-      "dino": 1.4,
-      "efficientnet": 1.3,
-      "forensic": 1.8
+      "texture": 1.0,
+      "frequency": 1.0,
+      "face": 1.0,
+      "dino": 1.0,
+      "efficientnet": 1.0,
+      "forensic": 1.0
     }
   },
 

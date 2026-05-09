@@ -139,7 +139,29 @@ CorefakeNet achieves Xx speedup over 7-model ensemble with Y% accuracy retention
 - [x] Models loaded before first request arrives (no cold-start timeout)
 - [x] Startup log reports count of loaded/missing models
 
-#### 2.3d Increase Worker Count (Future)
+#### 2.3d Fix Temperature Calibration -- DONE
+
+**Files:** `configs/models.json`, `core/pipeline.py`
+
+- [x] Set all `per_model_temperatures` to 1.0 (identity/no-op) — previous values were arbitrary guesses
+- [x] Set default `temperature` to 1.0
+- [x] Update `calibrate_score()` docstring to document uncalibrated state
+- [x] Document path to proper calibration (Platt scaling on held-out validation set)
+- [x] FusionMLP already has its own learned `ModelCalibrator` — no change needed there
+
+#### 2.3e Demote forensic_score to Labeled Heuristic -- DONE
+
+**Files:** `core/pipeline.py`, `configs/models.json`, `pipeline/video_analyzer.py`
+
+- [x] Rename `forensic_score()` to `_heuristic_forensic_score()` with clear docstring
+- [x] Keep backward-compatible public alias for training scripts/tests
+- [x] Reduce forensic weight from 0.15 to 0.05 in both `default` and `face_boosted` weight sets
+- [x] Redistribute weight to trained models (vit +0.05, texture +0.02, frequency +0.01, face +0.02)
+- [x] Do NOT count forensic in `active_models` / model agreement
+- [x] Keep forensic in FusionMLP path unchanged (MLP was trained with forensic input)
+- [x] Fix same issue in `pipeline/video_analyzer.py`
+
+#### 2.3f Increase Worker Count (Future)
 
 - [ ] Change to `workers=4` (or configurable via `PROOFYX_WORKERS` env var)
 - [ ] Add `--preload` flag to share model memory across workers

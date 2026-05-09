@@ -491,9 +491,8 @@ class ModelEnsemble:
                 face_prob = 1.0 - real_prob
                 active_models += 1
 
-        # Forensic analysis (heuristic, on full frame)
+        # Forensic analysis (heuristic, NOT a trained model — supplementary signal)
         forensic_prob = self._forensic_score(pil_img)
-        active_models += 1
 
         # Fallback heuristic frequency if FrequencyCNN not available
         freq_heuristic_prob = 0.0
@@ -580,7 +579,7 @@ class ModelEnsemble:
 
     @staticmethod
     def _forensic_score(pil_img):
-        """Detect manipulation via noise inconsistency and ELA."""
+        """Heuristic forensic signal (NOT a trained model) — noise inconsistency + ELA."""
         img = np.array(pil_img.convert("RGB"))
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         h, w = gray.shape
