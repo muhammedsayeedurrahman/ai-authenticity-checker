@@ -97,6 +97,7 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
     model_keys = [
         "vit", "texture", "frequency", "face", "dino",
         "efficientnet", "fusion", "corefakenet", "audio",
+        "wav2vec2_audio", "clip",
     ]
     models: dict[str, ModelEntry] = {}
     for key in model_keys:

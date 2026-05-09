@@ -62,6 +62,10 @@ class ModelRegistry:
         self.vit_model = None
         self.vit_processor = None
 
+        # HuggingFace models (new)
+        self.wav2vec2_audio = None
+        self.clip_deepfake = None
+
         # Analyzers
         self.video_analyzer = None
         self.audio_analyzer = None
@@ -92,6 +96,12 @@ class ModelRegistry:
 
         # HuggingFace ViT
         self._try_load_vit()
+
+        # Wav2Vec2 audio deepfake detector
+        self._try_load_wav2vec2_audio()
+
+        # CLIP ViT-L/14 deepfake detector
+        self._try_load_clip_deepfake()
 
         # Frequency analyzer (heuristic fallback)
         try:
@@ -189,6 +199,33 @@ class ModelRegistry:
             logger.warning("Could not load ViT: %s", e)
             self.missing.append("vit")
 
+    def _try_load_wav2vec2_audio(self) -> None:
+        """Load Wav2Vec2-XLSR-300M audio deepfake detector from HuggingFace."""
+        try:
+            from core_models.wav2vec2_audio import Wav2Vec2AudioDetector
+            cfg = self.config.get_model("wav2vec2_audio")
+            model_id = cfg.model_id if cfg else None
+            self.wav2vec2_audio = Wav2Vec2AudioDetector(
+                device=self.device, model_id=model_id,
+            )
+            self.loaded.append("wav2vec2_audio")
+        except (RuntimeError, FileNotFoundError, ImportError, KeyError, OSError) as e:
+            logger.warning("Could not load Wav2Vec2 audio: %s", e)
+            self.missing.append("wav2vec2_audio")
+
+    def _try_load_clip_deepfake(self) -> None:
+        """Load CLIP ViT-L/14 deepfake detector (TorchScript) from HuggingFace."""
+        try:
+            from core_models.clip_deepfake import CLIPDeepfakeDetector
+            cache_dir = str(self.config.models_dir.parent / ".hf_cache")
+            self.clip_deepfake = CLIPDeepfakeDetector(
+                device=self.device, cache_dir=cache_dir,
+            )
+            self.loaded.append("clip")
+        except (RuntimeError, FileNotFoundError, ImportError, KeyError, OSError) as e:
+            logger.warning("Could not load CLIP deepfake: %s", e)
+            self.missing.append("clip")
+
     def _init_video_analyzer(self) -> None:
         try:
             from pipeline.video_analyzer import VideoAnalyzer
@@ -202,6 +239,7 @@ class ModelRegistry:
                 texture_model=self.models.get("texture"),
                 freq_cnn=self.models.get("frequency"),
                 fusion_mlp=self.models.get("fusion"),
+                clip_deepfake=self.clip_deepfake,
             )
         except (RuntimeError, FileNotFoundError, ImportError, KeyError) as e:
             logger.warning("Could not init VideoAnalyzer: %s", e)
@@ -209,7 +247,10 @@ class ModelRegistry:
     def _init_audio_analyzer(self) -> None:
         try:
             from pipeline.audio_analyzer import AudioAnalyzer
-            self.audio_analyzer = AudioAnalyzer(device=self.device)
+            self.audio_analyzer = AudioAnalyzer(
+                device=self.device,
+                wav2vec2_model=self.wav2vec2_audio,
+            )
             if self.audio_analyzer.model_loaded:
                 self.loaded.append("audio")
             else:
@@ -416,6 +457,12 @@ def _analyze_image_ensemble(
             scores["face"] = 1.0 - real_prob  # Convert P(real) → P(fake)
             active_models += 1
 
+        # CLIP ViT-L/14 deepfake detector
+        if reg.clip_deepfake is not None:
+            clip_score = reg.clip_deepfake.predict(model_input)
+            scores["clip"] = clip_score
+            active_models += 1
+
     # Forensic heuristic (NOT a trained model — supplementary signal only)
     scores["forensic"] = _heuristic_forensic_score(image_pil)
 
@@ -442,6 +489,12 @@ def _analyze_image_ensemble(
             dino=scores.get("dino", 0.0),
             texture=scores.get("texture", 0.0),
         )
+        # CLIP is NOT a FusionMLP input (7 fixed inputs) but used as
+        # a post-fusion adjustment when CLIP has high confidence
+        if "clip" in scores:
+            clip_conf = abs(scores["clip"] - 0.5) * 2.0
+            if clip_conf > 0.4:
+                final_risk = 0.8 * final_risk + 0.2 * scores["clip"]
     else:
         fusion_mode = "weighted_avg"
         cal = config.calibration
@@ -466,7 +519,7 @@ def _analyze_image_ensemble(
         final_risk = weighted_sum / total_weight if total_weight > 0 else 0.0
 
         # High-confidence override
-        trained_keys = ["vit", "texture", "face", "dino"]
+        trained_keys = ["vit", "texture", "face", "dino", "clip"]
         trained_cal = [cal_scores[k] for k in trained_keys if k in cal_scores]
         if trained_cal:
             max_prob = max(trained_cal)
@@ -506,6 +559,7 @@ def _analyze_image_ensemble(
         "frequency_prob": scores.get("frequency", 0.0),
         "eff_prob": scores.get("texture", scores.get("efficientnet", 0.0)),
         "dino_prob": scores.get("dino", 0.0),
+        "clip_prob": scores.get("clip"),
     }
     try:
         from utils.explainability import explain_risk

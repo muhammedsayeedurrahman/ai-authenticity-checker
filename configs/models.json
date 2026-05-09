@@ -70,22 +70,31 @@
     "fast_mode": true,
     "description": "Unified hybrid CNN (5 heads, attention fusion)"
   },
+  "clip": {
+    "type": "huggingface",
+    "model_id": "yermandy/deepfake-detection",
+    "weight": 0.15,
+    "enabled": true,
+    "description": "CLIP ViT-L/14 deepfake detector (LN-tuning, TorchScript)"
+  },
 
   "ensemble_weights": {
     "_note": "forensic is a heuristic (not a trained model) — given minimal weight as supplementary signal",
     "default": {
-      "vit": 0.45,
-      "texture": 0.22,
-      "frequency": 0.11,
-      "face": 0.12,
+      "vit": 0.35,
+      "clip": 0.15,
+      "texture": 0.20,
+      "frequency": 0.10,
+      "face": 0.10,
       "dino": 0.05,
       "forensic": 0.05
     },
     "face_boosted": {
-      "vit": 0.40,
-      "texture": 0.17,
-      "frequency": 0.11,
-      "face": 0.22,
+      "vit": 0.30,
+      "clip": 0.15,
+      "texture": 0.15,
+      "frequency": 0.10,
+      "face": 0.20,
       "dino": 0.05,
       "forensic": 0.05
     }
@@ -97,6 +106,7 @@
     "high_confidence_override": 0.60,
     "per_model_temperatures": {
       "vit": 1.0,
+      "clip": 1.0,
       "texture": 1.0,
       "frequency": 1.0,
       "face": 1.0,
@@ -111,6 +121,12 @@
     "path": "audio_deepfake_model.pth",
     "enabled": true,
     "description": "Audio deepfake CNN"
+  },
+  "wav2vec2_audio": {
+    "type": "huggingface",
+    "model_id": "garystafford/wav2vec2-deepfake-voice-detector",
+    "enabled": true,
+    "description": "Wav2Vec2-XLSR-300M fine-tuned for audio deepfake detection"
   },
 
   "api_keys": {

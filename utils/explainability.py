@@ -49,6 +49,8 @@ def explain_risk(score, model_scores=None):
             evidence.append("EfficientNet flagged AI generation")
         if model_scores.get("dino_prob", 0) > 0.6:
             evidence.append("DINOv2 detected synthetic features")
+        if model_scores.get("clip_prob", 0) > 0.6:
+            evidence.append("CLIP vision-language model detected manipulation signatures")
 
         if evidence:
             explanation += f". Evidence: {'; '.join(evidence)}"

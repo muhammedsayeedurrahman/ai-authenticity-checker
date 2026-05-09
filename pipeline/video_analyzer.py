@@ -411,7 +411,8 @@ class ModelEnsemble:
 
     def __init__(self, dino_model, eff_model, face_model, device,
                  vit_model=None, vit_processor=None,
-                 texture_model=None, freq_cnn=None, fusion_mlp=None):
+                 texture_model=None, freq_cnn=None, fusion_mlp=None,
+                 clip_deepfake=None):
         self.dino_model = dino_model
         self.eff_model = eff_model
         self.face_model = face_model
@@ -421,6 +422,7 @@ class ModelEnsemble:
         self.texture_model = texture_model
         self.freq_cnn = freq_cnn
         self.fusion_mlp = fusion_mlp
+        self.clip_deepfake = clip_deepfake
         self.frequency_analyzer = FrequencyAnalyzer()
 
     def predict(self, pil_img, has_face=False, face_crop=None):
@@ -447,6 +449,7 @@ class ModelEnsemble:
         vit_prob = 0.0
         texture_prob = 0.0
         freq_cnn_prob = 0.0
+        clip_prob = 0.0
         active_models = 0
 
         with torch.no_grad():
@@ -491,6 +494,11 @@ class ModelEnsemble:
                 face_prob = 1.0 - real_prob
                 active_models += 1
 
+            # CLIP ViT-L/14 deepfake detector
+            if self.clip_deepfake is not None:
+                clip_prob = self.clip_deepfake.predict(model_input)
+                active_models += 1
+
         # Forensic analysis (heuristic, NOT a trained model — supplementary signal)
         forensic_prob = self._forensic_score(pil_img)
 
@@ -511,10 +519,18 @@ class ModelEnsemble:
         if self.fusion_mlp is not None:
             frame_risk = self.fusion_mlp.predict(
                 vit=vit_prob,
-                efficientnet=texture_prob,
+                efficientnet=eff_prob,
                 forensic=forensic_prob,
                 frequency=freq_display,
+                face=face_prob,
+                dino=dino_prob,
+                texture=texture_prob,
             )
+            # CLIP post-fusion adjustment (not a FusionMLP input)
+            if self.clip_deepfake is not None:
+                clip_conf = abs(clip_prob - 0.5) * 2.0
+                if clip_conf > 0.4:
+                    frame_risk = 0.8 * frame_risk + 0.2 * clip_prob
         else:
             # Fallback: manual weighted average
             use_boosted = has_face and self.face_model is not None and face_prob > 0.6
@@ -569,6 +585,7 @@ class ModelEnsemble:
             "eff_prob": round(texture_prob if self.texture_model else eff_prob, 4),
             "face_prob": round(face_prob, 4),
             "vit_prob": round(vit_prob, 4),
+            "clip_prob": round(clip_prob, 4),
             "forensic_prob": round(forensic_prob, 4),
             "frequency_prob": round(freq_display, 4),
             "has_face": has_face,
@@ -718,12 +735,13 @@ class VideoAnalyzer:
 
     def __init__(self, dino_model, eff_model, face_model, device,
                  vit_model=None, vit_processor=None,
-                 texture_model=None, freq_cnn=None, fusion_mlp=None):
+                 texture_model=None, freq_cnn=None, fusion_mlp=None,
+                 clip_deepfake=None):
         self.ensemble = ModelEnsemble(
             dino_model, eff_model, face_model, device,
             vit_model=vit_model, vit_processor=vit_processor,
             texture_model=texture_model, freq_cnn=freq_cnn,
-            fusion_mlp=fusion_mlp,
+            fusion_mlp=fusion_mlp, clip_deepfake=clip_deepfake,
         )
         self.face_extractor = FaceExtractor()
         self.temporal = TemporalAnalyzer(window_size=10)

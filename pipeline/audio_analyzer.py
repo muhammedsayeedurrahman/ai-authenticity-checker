@@ -1,10 +1,11 @@
 """
 Audio deepfake detection pipeline.
 
-Integrates the zo9999 CNN mel-spectrogram model with:
+Integrates Wav2Vec2 (primary) and the zo9999 CNN mel-spectrogram model (fallback):
   - Audio loading and format conversion
+  - Wav2Vec2 inference on full audio (resampled to 16 kHz)
   - Mel-spectrogram preprocessing (matching zo9999 exactly)
-  - Windowed analysis for long audio (3-5s segments)
+  - Windowed analysis for long audio (3-5s segments) via CNN fallback
   - Spectral artifact detection (explainability)
   - Unified JSON output compatible with the multimodal pipeline
 """
@@ -12,6 +13,7 @@ Integrates the zo9999 CNN mel-spectrogram model with:
 import os
 import sys
 import tempfile
+import logging
 import numpy as np
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -23,6 +25,8 @@ import librosa
 import soundfile as sf
 
 from core_models.audio_deepfake_model import AudioDeepfakeCNN
+
+logger = logging.getLogger(__name__)
 
 # ================= CONFIG =================
 SAMPLE_RATE = 22050          # librosa default, matches zo9999 training
@@ -234,24 +238,30 @@ class AudioAnalyzer:
     """
     Full audio deepfake detection pipeline.
 
+    Uses Wav2Vec2 as the primary model when available, with CNN fallback.
+
     Usage:
         analyzer = AudioAnalyzer(device)
         result = analyzer.analyze("audio.wav")
         print(result)  # Unified JSON output
     """
 
-    def __init__(self, device=None):
+    def __init__(self, device=None, wav2vec2_model=None):
         self.device = device or torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
         self.model = None
         self.model_loaded = False
+        self.wav2vec2_model = wav2vec2_model
         self._load_model()
 
     def _load_model(self):
         """Load the audio deepfake CNN model."""
         if not os.path.exists(MODEL_PATH):
-            print(f"Audio model not found at {MODEL_PATH} (train first)")
+            logger.info("Audio CNN model not found at %s (train first)", MODEL_PATH)
+            # Still consider loaded if Wav2Vec2 is available
+            if self.wav2vec2_model is not None:
+                self.model_loaded = True
             return
 
         try:
@@ -261,14 +271,21 @@ class AudioAnalyzer:
             )
             self.model.eval()
             self.model_loaded = True
-            print("Audio deepfake model loaded successfully")
+            logger.info("Audio deepfake CNN model loaded successfully")
         except (RuntimeError, FileNotFoundError, KeyError) as e:
-            print(f"Warning: Could not load audio model: {e}")
+            logger.warning("Could not load audio CNN model: %s", e)
             self.model = None
+            # Still consider loaded if Wav2Vec2 is available
+            if self.wav2vec2_model is not None:
+                self.model_loaded = True
 
     def analyze(self, audio_path, progress_callback=None):
         """
         Full audio analysis pipeline.
+
+        Uses Wav2Vec2 as primary model when available; falls back to CNN
+        segmented analysis otherwise. When both are loaded, Wav2Vec2 is
+        the primary result and CNN is included as a secondary signal.
 
         Args:
             audio_path: Path to audio file (WAV, MP3, FLAC, M4A, etc.)
@@ -280,132 +297,40 @@ class AudioAnalyzer:
         if not self.model_loaded:
             return {
                 "media_type": "audio",
-                "error": "Audio model not loaded. Train with: python training/train_audio_deepfake.py",
+                "error": "No audio model loaded (need Wav2Vec2 or CNN)",
                 "authenticity_score": None,
             }
 
         try:
-            # Step 1: Load audio
+            # Step 1: Load audio at native pipeline rate (22050 Hz)
             if progress_callback:
                 progress_callback(0, 5, "Loading audio...")
             waveform, sr = load_audio(audio_path)
             duration = len(waveform) / sr
 
-            # Step 2: Segment audio
-            if progress_callback:
-                progress_callback(1, 5, "Segmenting audio...")
-            segments = segment_audio(waveform, sr)
-
-            if not segments:
-                return {
-                    "media_type": "audio",
-                    "error": "Audio too short to analyze (minimum 0.5 seconds)",
-                    "authenticity_score": None,
-                }
-
-            # Step 3: Analyze each segment
-            segment_results = []
-            suspicious_timestamps = []
-            all_evidence = set()
-
-            for i, (start_t, end_t, seg_wave) in enumerate(segments):
+            # Step 2: Run Wav2Vec2 if available (primary model)
+            wav2vec2_result = None
+            if self.wav2vec2_model is not None:
                 if progress_callback:
-                    progress_callback(
-                        2 + i, 2 + len(segments),
-                        f"Analyzing segment {i+1}/{len(segments)} ({start_t:.1f}s - {end_t:.1f}s)"
-                    )
+                    progress_callback(1, 5, "Running Wav2Vec2 analysis...")
+                wav2vec2_result = self._run_wav2vec2(waveform, sr)
 
-                # Generate mel-spectrogram
-                mel_db = generate_mel_spectrogram(seg_wave, sr)
+            # Step 3: Run CNN segmented analysis (secondary / fallback)
+            cnn_result = None
+            if self.model is not None:
+                if progress_callback:
+                    progress_callback(2, 5, "Running CNN segmented analysis...")
+                cnn_result = self._run_cnn_segmented(
+                    waveform, sr, duration, progress_callback,
+                )
 
-                # Run CNN model
-                tensor = torch.tensor(
-                    mel_db, dtype=torch.float32
-                ).unsqueeze(0).unsqueeze(0).to(self.device)
-
-                with torch.no_grad():
-                    probs = self.model(tensor)
-                    fake_prob = probs[0, 0].item()
-                    real_prob = probs[0, 1].item()
-
-                # Spectral artifact analysis
-                artifact_scores, evidence = analyze_spectral_artifacts(mel_db)
-                all_evidence.update(evidence)
-
-                seg_result = {
-                    "start_time": round(start_t, 2),
-                    "end_time": round(end_t, 2),
-                    "fake_probability": round(fake_prob, 4),
-                    "real_probability": round(real_prob, 4),
-                    "artifact_scores": artifact_scores,
-                    "evidence": evidence,
-                }
-                segment_results.append(seg_result)
-
-                # Track suspicious segments
-                if fake_prob > 0.5:
-                    suspicious_timestamps.append(round(start_t, 1))
-
-            # Step 4: Aggregate results
+            # Step 4: Merge results
             if progress_callback:
-                progress_callback(len(segments) + 2, len(segments) + 3, "Computing final score...")
+                progress_callback(4, 5, "Computing final score...")
 
-            fake_probs = [s["fake_probability"] for s in segment_results]
-            avg_fake = sum(fake_probs) / len(fake_probs)
-
-            # Weighted average: higher-confidence segments get more weight
-            weights = [abs(p - 0.5) + 0.5 for p in fake_probs]
-            total_w = sum(weights)
-            weighted_fake = sum(p * w for p, w in zip(fake_probs, weights)) / total_w
-
-            # Use weighted average as primary score
-            final_fake_prob = weighted_fake
-
-            # Authenticity score: 0 = definitely fake, 100 = definitely real
-            authenticity_score = round((1.0 - final_fake_prob) * 100, 1)
-
-            # Determine label and confidence
-            if final_fake_prob > 0.7:
-                label = "Likely Fake"
-                confidence = "High"
-                manipulation_type = "AI voice cloning / TTS"
-            elif final_fake_prob > 0.5:
-                label = "Possibly Fake"
-                confidence = "Medium"
-                manipulation_type = "Suspected AI generation"
-            elif final_fake_prob > 0.3:
-                label = "Uncertain"
-                confidence = "Low"
-                manipulation_type = "Inconclusive"
-            else:
-                label = "Likely Real"
-                confidence = "High"
-                manipulation_type = "None detected"
-
-            # Build explanation
-            explanation = self._build_explanation(
-                final_fake_prob, all_evidence, segment_results
+            return self._merge_results(
+                wav2vec2_result, cnn_result, duration,
             )
-
-            return {
-                "media_type": "audio",
-                "authenticity_score": authenticity_score,
-                "fake_probability": round(final_fake_prob, 4),
-                "label": label,
-                "modality_scores": {
-                    "image": None,
-                    "video": None,
-                    "audio": authenticity_score,
-                },
-                "manipulation_type": manipulation_type,
-                "confidence": confidence,
-                "evidence": sorted(all_evidence),
-                "timestamps": suspicious_timestamps,
-                "explanation": explanation,
-                "duration_sec": round(duration, 2),
-                "segments_analyzed": len(segment_results),
-                "segment_results": segment_results,
-            }
 
         except (ValueError, RuntimeError, OSError) as e:
             return {
@@ -413,6 +338,159 @@ class AudioAnalyzer:
                 "error": str(e),
                 "authenticity_score": None,
             }
+
+    def _run_wav2vec2(self, waveform, sr):
+        """Run Wav2Vec2 on the full audio, resampling to 16 kHz."""
+        from core_models.wav2vec2_audio import SAMPLE_RATE as WAV2VEC2_SR
+
+        # Resample from pipeline SR (22050) to Wav2Vec2 SR (16000)
+        if sr != WAV2VEC2_SR:
+            waveform_16k = librosa.resample(
+                waveform, orig_sr=sr, target_sr=WAV2VEC2_SR,
+            )
+        else:
+            waveform_16k = waveform
+
+        return self.wav2vec2_model.predict(waveform_16k)
+
+    def _run_cnn_segmented(self, waveform, sr, duration, progress_callback):
+        """Run CNN model on segmented audio (original behavior)."""
+        segments = segment_audio(waveform, sr)
+
+        if not segments:
+            return None
+
+        segment_results = []
+        suspicious_timestamps = []
+        all_evidence = set()
+
+        for i, (start_t, end_t, seg_wave) in enumerate(segments):
+            if progress_callback:
+                progress_callback(
+                    2 + i, 2 + len(segments),
+                    f"CNN segment {i+1}/{len(segments)} ({start_t:.1f}s - {end_t:.1f}s)"
+                )
+
+            mel_db = generate_mel_spectrogram(seg_wave, sr)
+
+            tensor = torch.tensor(
+                mel_db, dtype=torch.float32
+            ).unsqueeze(0).unsqueeze(0).to(self.device)
+
+            with torch.no_grad():
+                probs = self.model(tensor)
+                fake_prob = probs[0, 0].item()
+                real_prob = probs[0, 1].item()
+
+            artifact_scores, evidence = analyze_spectral_artifacts(mel_db)
+            all_evidence.update(evidence)
+
+            seg_result = {
+                "start_time": round(start_t, 2),
+                "end_time": round(end_t, 2),
+                "fake_probability": round(fake_prob, 4),
+                "real_probability": round(real_prob, 4),
+                "artifact_scores": artifact_scores,
+                "evidence": evidence,
+            }
+            segment_results.append(seg_result)
+
+            if fake_prob > 0.5:
+                suspicious_timestamps.append(round(start_t, 1))
+
+        fake_probs = [s["fake_probability"] for s in segment_results]
+        weights = [abs(p - 0.5) + 0.5 for p in fake_probs]
+        total_w = sum(weights)
+        weighted_fake = sum(p * w for p, w in zip(fake_probs, weights)) / total_w
+
+        return {
+            "fake_probability": weighted_fake,
+            "segment_results": segment_results,
+            "evidence": all_evidence,
+            "timestamps": suspicious_timestamps,
+        }
+
+    def _merge_results(self, wav2vec2_result, cnn_result, duration):
+        """Merge Wav2Vec2 (primary) and CNN (secondary) results."""
+        # Determine primary fake probability and model used
+        if wav2vec2_result is not None:
+            final_fake_prob = wav2vec2_result["fake_probability"]
+            model_used = "wav2vec2"
+        elif cnn_result is not None:
+            final_fake_prob = cnn_result["fake_probability"]
+            model_used = "cnn"
+        else:
+            return {
+                "media_type": "audio",
+                "error": "No model produced a result",
+                "authenticity_score": None,
+            }
+
+        # Collect segment results and evidence from CNN if available
+        segment_results = []
+        all_evidence = set()
+        suspicious_timestamps = []
+
+        if cnn_result is not None:
+            segment_results = cnn_result["segment_results"]
+            all_evidence = cnn_result["evidence"]
+            suspicious_timestamps = cnn_result["timestamps"]
+
+        # Authenticity score: 0 = definitely fake, 100 = definitely real
+        authenticity_score = round((1.0 - final_fake_prob) * 100, 1)
+
+        # Label and confidence
+        if final_fake_prob > 0.7:
+            label = "Likely Fake"
+            confidence = "High"
+            manipulation_type = "AI voice cloning / TTS"
+        elif final_fake_prob > 0.5:
+            label = "Possibly Fake"
+            confidence = "Medium"
+            manipulation_type = "Suspected AI generation"
+        elif final_fake_prob > 0.3:
+            label = "Uncertain"
+            confidence = "Low"
+            manipulation_type = "Inconclusive"
+        else:
+            label = "Likely Real"
+            confidence = "High"
+            manipulation_type = "None detected"
+
+        # Build explanation
+        explanation = self._build_explanation(
+            final_fake_prob, all_evidence, segment_results,
+        )
+
+        result = {
+            "media_type": "audio",
+            "authenticity_score": authenticity_score,
+            "fake_probability": round(final_fake_prob, 4),
+            "label": label,
+            "model_used": model_used,
+            "modality_scores": {
+                "image": None,
+                "video": None,
+                "audio": authenticity_score,
+            },
+            "manipulation_type": manipulation_type,
+            "confidence": confidence,
+            "evidence": sorted(all_evidence),
+            "timestamps": suspicious_timestamps,
+            "explanation": explanation,
+            "duration_sec": round(duration, 2),
+            "segments_analyzed": len(segment_results),
+            "segment_results": segment_results,
+        }
+
+        # Include secondary model result when both are available
+        if wav2vec2_result is not None and cnn_result is not None:
+            result["secondary_model"] = {
+                "name": "cnn",
+                "fake_probability": round(cnn_result["fake_probability"], 4),
+            }
+
+        return result
 
     def _build_explanation(self, fake_prob, evidence, segment_results):
         """Build human-readable explanation."""
