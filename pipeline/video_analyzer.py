@@ -16,13 +16,13 @@ import tempfile
 import torch
 import numpy as np
 from PIL import Image
-from io import BytesIO
 from torchvision import transforms
 from collections import deque
 
 from pipeline.face_gate import face_present
 from core_models.frequency_cnn import FrequencyCNN, fft_to_tensor
 from core_models.fusion_mlp import FusionMLP
+from core.pipeline import calibrate_score, forensic_score as _core_forensic_score
 
 
 # -------- Shared transform --------
@@ -375,32 +375,31 @@ class FrequencyAnalyzer:
 #  4. ModelEnsemble
 # ================================================================
 
-# Corrected weights: ViT 50%, EfficientNet 30%, Forensic 20%
-# Frequency, Face, DINOv2 are auxiliary — they contribute but don't dominate
-WEIGHTS = {
-    "vit": 0.40, "efficientnet": 0.20, "forensic": 0.15,
-    "frequency": 0.10, "face": 0.10, "dino": 0.05,
-}
-# When face model detects fake (>0.6), boost face weight
-WEIGHTS_FACE_BOOSTED = {
-    "vit": 0.35, "efficientnet": 0.15, "forensic": 0.15,
-    "frequency": 0.10, "face": 0.20, "dino": 0.05,
-}
+# Weights loaded from configs/models.json via core.config.
+# Kept as module-level cache; refreshed on first ModelEnsemble use.
+def _load_weights():
+    """Load ensemble weights from central config (avoids hardcoded duplication)."""
+    from core.config import get_config
+    cfg = get_config()
+    return cfg.get_weights(face_boosted=False), cfg.get_weights(face_boosted=True)
+
+
+_weights_cache = None
+
+
+def _get_weights():
+    global _weights_cache
+    if _weights_cache is None:
+        _weights_cache = _load_weights()
+    return _weights_cache
+
+
 HIGH_CONFIDENCE_OVERRIDE = 0.60
 
 
-def _calibrate(score, temperature=1.2):
-    """
-    Apply temperature scaling to calibrate model output.
-    Maps raw sigmoid/softmax scores to comparable probability space.
-    Temperature 1.2 preserves more signal than 1.5.
-    """
-    import math
-    # Convert to logit, apply temperature, convert back
-    score = max(min(score, 0.999), 0.001)
-    logit = math.log(score / (1 - score))
-    calibrated = 1.0 / (1.0 + math.exp(-logit / temperature))
-    return calibrated
+def _calibrate(score, temperature=1.0):
+    """Delegate to core.pipeline.calibrate_score (avoids duplication)."""
+    return calibrate_score(score, temperature)
 
 
 class ModelEnsemble:
@@ -534,7 +533,8 @@ class ModelEnsemble:
         else:
             # Fallback: manual weighted average
             use_boosted = has_face and self.face_model is not None and face_prob > 0.6
-            w = WEIGHTS_FACE_BOOSTED if use_boosted else WEIGHTS
+            default_w, boosted_w = _get_weights()
+            w = boosted_w if use_boosted else default_w
 
             total_weight = 0.0
             weighted_sum = 0.0
@@ -596,38 +596,8 @@ class ModelEnsemble:
 
     @staticmethod
     def _forensic_score(pil_img):
-        """Heuristic forensic signal (NOT a trained model) — noise inconsistency + ELA."""
-        img = np.array(pil_img.convert("RGB"))
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        h, w = gray.shape
-
-        patches = []
-        patch_size = 64
-        for y in range(0, h - patch_size, patch_size):
-            for x in range(0, w - patch_size, patch_size):
-                patch = gray[y:y + patch_size, x:x + patch_size].astype(np.float32)
-                blur = cv2.GaussianBlur(patch, (5, 5), 0)
-                noise = patch - blur
-                patches.append(noise.std())
-
-        if not patches:
-            return 0.0
-
-        noise_std = np.std(patches)
-        noise_mean = np.mean(patches) + 1e-8
-        noise_inconsistency = noise_std / noise_mean
-
-        buf = BytesIO()
-        pil_img.convert("RGB").save(buf, format="JPEG", quality=90)
-        buf.seek(0)
-        recompressed = np.array(Image.open(buf).convert("RGB")).astype(np.float32)
-        original = img.astype(np.float32)
-        ela_diff = np.abs(original - recompressed)
-        ela_std = ela_diff.std()
-        ela_score = min(ela_std / 20.0, 1.0)
-
-        noise_score = min(max((noise_inconsistency - 0.5) / 0.6, 0.0), 1.0)
-        return 0.6 * noise_score + 0.4 * ela_score
+        """Delegate to core.pipeline.forensic_score (avoids duplication)."""
+        return _core_forensic_score(pil_img)
 
 
 # ================================================================

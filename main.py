@@ -1,10 +1,10 @@
 """
-ProofyX -- FastAPI + Gradio entry point.
+ProofyX -- FastAPI entry point.
 
 Serves:
-    /ui     -> Gradio Dashboard (deeptech minimal UI)
     /api/v1 -> REST API Endpoints
     /docs   -> Swagger auto-generated documentation
+    /*      -> React SPA (from frontend/dist/)
 """
 
 from __future__ import annotations
@@ -20,17 +20,16 @@ if ROOT_DIR not in sys.path:
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-import gradio as gr
 
 # Import config first -- triggers load_dotenv() before other modules read env vars
 import core.config  # noqa: F401
 
 from api.routes import router as api_router, limiter
 from core.secrets import get_active_pools
-from ui.gradio_app import create_gradio_app
 
 # ──────────────────────────────────────────────
 # Logging
@@ -52,9 +51,15 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Eagerly load ML models at startup so the first request isn't slow."""
+    """Initialize database and eagerly load ML models at startup."""
+    from db.database import init_db, close_db
     from core.pipeline import get_registry
 
+    # Database
+    logger.info("Initializing database...")
+    await init_db()
+
+    # ML Models
     logger.info("Loading ML models (this may take a moment on first run)...")
     reg = get_registry()
     logger.info(
@@ -62,6 +67,9 @@ async def lifespan(app: FastAPI):
         len(reg.loaded), len(reg.missing),
     )
     yield
+
+    # Cleanup
+    await close_db()
 
 
 app = FastAPI(
@@ -80,7 +88,10 @@ app = FastAPI(
 _cors_raw = os.environ.get("CORS_ORIGINS", "")
 _cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 if not _cors_origins:
-    _cors_origins = ["http://localhost:7861", "http://127.0.0.1:7861"]
+    _cors_origins = [
+        "http://localhost:7861", "http://127.0.0.1:7861",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -126,24 +137,33 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(api_router, prefix="/api/v1", tags=["Analysis"])
 
-# Static files (logo, assets)
+# Static files (project-level assets: logo, etc.)
 assets_dir = os.path.join(ROOT_DIR, "assets")
 if os.path.isdir(assets_dir):
-    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    app.mount("/app-assets", StaticFiles(directory=assets_dir), name="app-assets")
 
 # ──────────────────────────────────────────────
-# Gradio Mount
+# React SPA (production build from frontend/dist/)
 # ──────────────────────────────────────────────
 
-logger.info("Creating Gradio app...")
-gradio_app = create_gradio_app()
+frontend_dist = os.path.join(ROOT_DIR, "frontend", "dist")
+if os.path.isdir(frontend_dist):
+    _spa_index = os.path.join(frontend_dist, "index.html")
 
-app = gr.mount_gradio_app(
-    app,
-    gradio_app,
-    path="/ui",
-    allowed_paths=[assets_dir],
-)
+    @app.get("/")
+    async def spa_root():
+        """Serve React SPA root."""
+        return FileResponse(_spa_index)
+
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str):
+        """Serve React SPA -- try static file first, fall back to index.html."""
+        file_path = os.path.join(frontend_dist, path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(_spa_index)
+else:
+    logger.warning("frontend/dist/ not found — run 'cd frontend && npm run build' to serve the React UI")
 
 # ──────────────────────────────────────────────
 # Key Pool Status
@@ -160,7 +180,7 @@ else:
     logger.info("No API key pools configured -- running in dev mode (unauthenticated)")
 
 logger.info("ProofyX ready:")
-logger.info("  Dashboard: http://127.0.0.1:7861/ui")
+logger.info("  UI:        http://127.0.0.1:7861/")
 logger.info("  REST API:  http://127.0.0.1:7861/api/v1")
 logger.info("  Swagger:   http://127.0.0.1:7861/docs")
 

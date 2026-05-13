@@ -8,40 +8,42 @@ export default {
     extend: {
       colors: {
         background: {
-          DEFAULT: '#0A0E1A',
+          DEFAULT: '#09090B',
+          surface: '#18181B',
+          elevated: '#27272A',
           card: 'rgba(255, 255, 255, 0.04)',
           'card-hover': 'rgba(255, 255, 255, 0.07)',
         },
         border: {
-          subtle: 'rgba(255, 255, 255, 0.08)',
-          glow: 'rgba(0, 240, 255, 0.15)',
+          subtle: 'rgba(255, 255, 255, 0.06)',
+          hover: 'rgba(99, 102, 241, 0.25)',
         },
         accent: {
-          cyan: '#00F0FF',
-          violet: '#A855F7',
-          pink: '#EC4899',
-          green: '#10B981',
-          amber: '#F59E0B',
+          DEFAULT: '#6366F1',
+          glow: 'rgba(99, 102, 241, 0.15)',
+          success: '#22C55E',
+          warning: '#EAB308',
+          danger: '#EF4444',
         },
         text: {
-          primary: '#E2E8F0',
-          secondary: '#94A3B8',
-          muted: '#64748B',
+          primary: '#FAFAFA',
+          secondary: '#A1A1AA',
+          muted: '#71717A',
         },
         risk: {
-          low: '#10B981',
-          medium: '#F59E0B',
-          high: '#EC4899',
-        }
+          low: '#22C55E',
+          medium: '#EAB308',
+          high: '#EF4444',
+        },
       },
       boxShadow: {
-        'glow-cyan': '0 0 20px rgba(0, 240, 255, 0.15)',
-        'glow-violet': '0 0 20px rgba(168, 85, 247, 0.15)',
-        'glow-pink': '0 0 20px rgba(236, 72, 153, 0.15)',
+        'glow-accent': '0 0 20px rgba(99, 102, 241, 0.15)',
+        'glow-success': '0 0 20px rgba(34, 197, 94, 0.15)',
+        'glow-danger': '0 0 20px rgba(239, 68, 68, 0.15)',
       },
       fontFamily: {
         sans: ['Inter', 'Segoe UI', 'system-ui', 'sans-serif'],
-      }
+      },
     },
   },
   plugins: [],

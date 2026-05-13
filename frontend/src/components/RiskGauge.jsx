@@ -2,22 +2,20 @@ import React, { useEffect, useState } from 'react';
 
 export default function RiskGauge({ percentage, label = "AI Risk", size = 200 }) {
   const [offset, setOffset] = useState(0);
-  
+
   const radius = size * 0.4;
   const circumference = 2 * Math.PI * radius;
-  
-  // Calculate risk level color
+
   const getRiskColor = (pct) => {
-    if (pct > 70) return '#EC4899'; // High - Pink
-    if (pct > 40) return '#F59E0B'; // Medium - Amber
-    return '#10B981'; // Low - Green
+    if (pct > 70) return '#EF4444'; // High - Red
+    if (pct > 40) return '#EAB308'; // Medium - Yellow
+    return '#22C55E'; // Low - Green
   };
 
   const color = getRiskColor(percentage);
-  
+
   useEffect(() => {
     const progressOffset = ((100 - percentage) / 100) * circumference;
-    // Small timeout to trigger animation on mount
     const timer = setTimeout(() => setOffset(progressOffset), 100);
     return () => clearTimeout(timer);
   }, [percentage, circumference]);
@@ -25,7 +23,6 @@ export default function RiskGauge({ percentage, label = "AI Risk", size = 200 })
   return (
     <div className="flex flex-col items-center justify-center relative p-6">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {/* Background Circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -34,7 +31,6 @@ export default function RiskGauge({ percentage, label = "AI Risk", size = 200 })
           stroke="rgba(255,255,255,0.06)"
           strokeWidth="12"
         />
-        {/* Progress Circle */}
         <circle
           cx={size / 2}
           cy={size / 2}

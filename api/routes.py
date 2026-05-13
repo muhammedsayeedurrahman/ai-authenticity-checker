@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from fastapi import (
-    APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile,
+    APIRouter, Depends, File, HTTPException, Query, Request, UploadFile,
 )
 from PIL import Image
 from slowapi import Limiter
@@ -34,7 +34,7 @@ from core.pipeline import (
     analyze_audio, analyze_image, analyze_multimodal,
     analyze_video, get_registry,
 )
-from core.secrets import get_pool
+from core.auth import get_current_user
 from db.history import AnalysisHistory
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ ALLOWED_AUDIO_EXT = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
 
 # Per-media-type analysis timeouts (seconds), configurable via env vars
 TIMEOUT_IMAGE = int(os.environ.get("PROOFYX_TIMEOUT_IMAGE", "60"))
-TIMEOUT_VIDEO = int(os.environ.get("PROOFYX_TIMEOUT_VIDEO", "180"))
+TIMEOUT_VIDEO = int(os.environ.get("PROOFYX_TIMEOUT_VIDEO", "600"))
 TIMEOUT_AUDIO = int(os.environ.get("PROOFYX_TIMEOUT_AUDIO", "90"))
 TIMEOUT_MULTIMODAL = int(os.environ.get("PROOFYX_TIMEOUT_MULTIMODAL", "300"))
 
@@ -164,32 +164,6 @@ async def _run_with_timeout(
 
 
 # ──────────────────────────────────────────────
-# API Key Authentication
-# ──────────────────────────────────────────────
-
-async def verify_api_key(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-) -> Optional[str]:
-    """Validate the X-API-Key header against the PROOFYX_API_KEY pool.
-
-    - If no keys are configured: dev mode, all requests pass through.
-    - If keys are configured: the header must match one of them.
-    """
-    pool = get_pool("PROOFYX_API_KEY")
-
-    if pool is None:
-        return None
-
-    if not x_api_key:
-        raise HTTPException(status_code=401, detail="Missing X-API-Key header")
-
-    if not pool.has_key(x_api_key):
-        raise HTTPException(status_code=403, detail="Invalid API key")
-
-    return x_api_key
-
-
-# ──────────────────────────────────────────────
 # Analysis Endpoints
 # ──────────────────────────────────────────────
 
@@ -199,7 +173,7 @@ async def api_analyze_image(
     request: Request,
     file: UploadFile = File(...),
     mode: str = Query("ensemble", pattern="^(ensemble|fast)$"),
-    _key: Optional[str] = Depends(verify_api_key),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """Analyze an uploaded image for deepfake indicators."""
     contents = await _read_validated(file, MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXT)
@@ -214,13 +188,14 @@ async def api_analyze_image(
     if "error" in result and result["error"]:
         return ImageAnalysisResponse(success=False, error=result["error"])
 
-    analysis_id = str(uuid.uuid4())[:8]
+    analysis_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
+    user_id = current_user["id"] if current_user else None
 
     result["id"] = analysis_id
     result["timestamp"] = timestamp
     result["file_name"] = file.filename or ""
-    history.save(result)
+    await history.save(result, user_id=user_id)
 
     result.pop("gradcam_image", None)
     result.pop("original_image", None)
@@ -241,7 +216,7 @@ async def api_analyze_video(
     file: UploadFile = File(...),
     fps: float = Query(4.0, ge=0.5, le=30),
     aggregation: str = Query("weighted_avg"),
-    _key: Optional[str] = Depends(verify_api_key),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """Analyze an uploaded video for deepfake indicators."""
     contents = await _read_validated(file, MAX_VIDEO_SIZE, ALLOWED_VIDEO_EXT)
@@ -265,12 +240,13 @@ async def api_analyze_video(
     if "error" in result and result["error"]:
         return VideoAnalysisResponse(success=False, error=result["error"])
 
-    analysis_id = str(uuid.uuid4())[:8]
+    analysis_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
+    user_id = current_user["id"] if current_user else None
     result["id"] = analysis_id
     result["timestamp"] = timestamp
     result["file_name"] = file.filename or ""
-    history.save(result)
+    await history.save(result, user_id=user_id)
 
     return VideoAnalysisResponse(
         success=True,
@@ -286,7 +262,7 @@ async def api_analyze_video(
 async def api_analyze_audio(
     request: Request,
     file: UploadFile = File(...),
-    _key: Optional[str] = Depends(verify_api_key),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """Analyze an uploaded audio file for deepfake indicators."""
     contents = await _read_validated(file, MAX_AUDIO_SIZE, ALLOWED_AUDIO_EXT)
@@ -308,12 +284,13 @@ async def api_analyze_audio(
     if "error" in result and result["error"]:
         return AudioAnalysisResponse(success=False, error=result["error"])
 
-    analysis_id = str(uuid.uuid4())[:8]
+    analysis_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
+    user_id = current_user["id"] if current_user else None
     result["id"] = analysis_id
     result["timestamp"] = timestamp
     result["file_name"] = file.filename or ""
-    history.save(result)
+    await history.save(result, user_id=user_id)
 
     return AudioAnalysisResponse(
         success=True,
@@ -331,7 +308,7 @@ async def api_analyze_multimodal(
     image: Optional[UploadFile] = File(None),
     video: Optional[UploadFile] = File(None),
     audio: Optional[UploadFile] = File(None),
-    _key: Optional[str] = Depends(verify_api_key),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """Analyze multiple media types with cross-modal fusion."""
     image_pil = None
@@ -372,8 +349,21 @@ async def api_analyze_multimodal(
     if "error" in result and result["error"]:
         return MultimodalAnalysisResponse(success=False, error=result["error"])
 
-    analysis_id = str(uuid.uuid4())[:8]
+    analysis_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
+    user_id = current_user["id"] if current_user else None
+
+    # Determine file_name from first available upload
+    file_name = ""
+    for upload in (image, video, audio):
+        if upload is not None and upload.filename:
+            file_name = upload.filename
+            break
+
+    result["id"] = analysis_id
+    result["timestamp"] = timestamp
+    result["file_name"] = file_name
+    await history.save(result, user_id=user_id)
 
     return MultimodalAnalysisResponse(
         success=True,
@@ -392,20 +382,27 @@ async def api_analyze_multimodal(
 async def list_history(
     limit: int = Query(20, ge=1, le=100),
     media_type: Optional[str] = Query(None),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
-    """List recent analyses."""
-    rows = history.get_recent(limit=limit, media_type=media_type)
+    """List recent analyses, scoped to the authenticated user."""
+    user_id = current_user["id"] if current_user else None
+    rows = await history.get_recent(limit=limit, media_type=media_type, user_id=user_id)
     entries = [
         HistoryEntry(**{k: v for k, v in row.items() if k in HistoryEntry.model_fields})
         for row in rows
     ]
-    return HistoryListResponse(success=True, data=entries, total=history.count())
+    total = await history.count(user_id=user_id)
+    return HistoryListResponse(success=True, data=entries, total=total)
 
 
 @router.get("/history/{analysis_id}")
-async def get_analysis(analysis_id: str):
-    """Get a specific analysis result."""
-    result = history.get(analysis_id)
+async def get_analysis(
+    analysis_id: str,
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    """Get a specific analysis result, scoped to the authenticated user."""
+    user_id = current_user["id"] if current_user else None
+    result = await history.get(analysis_id, user_id=user_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return {"success": True, "data": result}

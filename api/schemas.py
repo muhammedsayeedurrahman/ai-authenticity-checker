@@ -187,6 +187,7 @@ class HistoryEntry(BaseModel):
     models_used: int = 0
     processing_time_ms: float = 0.0
     file_name: str = ""
+    user_id: Optional[str] = None
 
 
 class HistoryListResponse(BaseModel):

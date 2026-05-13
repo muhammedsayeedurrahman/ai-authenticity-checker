@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import io
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+# Force SQLite for tests
+os.environ.setdefault("DATABASE_URL", "")
+
 
 @pytest.fixture()
 def _mock_registry():
     """Patch the model registry so tests don't load real ML models."""
-    # Pre-import so patch() can resolve the dotted path.
-    # This does NOT trigger model loading (get_registry is lazy).
     import api.routes  # noqa: F401
 
     mock_reg = MagicMock()
@@ -36,7 +38,6 @@ def _mock_registry():
 @pytest.fixture()
 def client(_mock_registry):
     """FastAPI TestClient with mocked model registry."""
-    # Import here so the mock is active when the app module loads routes
     from main import app
     return TestClient(app)
 

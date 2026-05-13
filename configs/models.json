@@ -101,7 +101,8 @@
   },
 
   "calibration": {
-    "_note": "Temperatures set to 1.0 (identity) — proper Platt scaling requires a held-out validation set. Do NOT use arbitrary values.",
+    "_calibration_status": "uncalibrated",
+    "_note": "Temperatures set to 1.0 (identity) — proper Platt scaling requires a held-out validation set. Do NOT use arbitrary values. To calibrate: collect model outputs on a balanced held-out set (e.g., FF++, Celeb-DF), fit temperature via NLL minimization per model, then update per_model_temperatures.",
     "temperature": 1.0,
     "high_confidence_override": 0.60,
     "per_model_temperatures": {
@@ -139,6 +140,6 @@
       "TWILIO_TOKEN"
     ],
     "auth_required_routes": ["/api/v1/analyze/*"],
-    "public_routes": ["/api/v1/health", "/api/v1/models/status", "/api/v1/history"]
+    "public_routes": ["/api/v1/health", "/api/v1/models/status"]
   }
 }
