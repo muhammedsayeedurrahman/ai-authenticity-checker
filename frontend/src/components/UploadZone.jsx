@@ -1,16 +1,25 @@
 import React, { useCallback, useState } from 'react';
-import { UploadCloud } from 'lucide-react';
+import { UploadCloud, Check, RefreshCw } from 'lucide-react';
 
-export default function UploadZone({ onFileSelect, accept = "image/*", label = "Drag & drop file here or click to browse" }) {
+const FORMAT_BADGES = ['JPG', 'PNG', 'MP4', 'WAV', 'MP3'];
+
+export default function UploadZone({
+  onFileSelect,
+  accept = 'image/*',
+  label = 'Drag & drop or click to browse',
+}) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [preview, setPreview] = useState(null);
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setIsDragActive(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  }, []);
+  const handleDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      setIsDragActive(false);
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    },
+    []
+  );
 
   const handleChange = (e) => {
     const file = e.target.files[0];
@@ -20,8 +29,7 @@ export default function UploadZone({ onFileSelect, accept = "image/*", label = "
   const handleFile = (file) => {
     onFileSelect(file);
     if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-      const objectUrl = URL.createObjectURL(file);
-      setPreview({ url: objectUrl, type: file.type, name: file.name });
+      setPreview({ url: URL.createObjectURL(file), type: file.type, name: file.name });
     } else {
       setPreview({ name: file.name, type: file.type });
     }
@@ -32,11 +40,18 @@ export default function UploadZone({ onFileSelect, accept = "image/*", label = "
       onDragOver={(e) => { e.preventDefault(); setIsDragActive(true); }}
       onDragLeave={() => setIsDragActive(false)}
       onDrop={handleDrop}
-      className={`relative w-full h-64 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-all duration-300 overflow-hidden cursor-pointer
-        ${isDragActive
-          ? 'border-accent bg-accent/5 shadow-[inset_0_0_20px_rgba(99,102,241,0.1)]'
-          : 'border-border-subtle hover:border-border-hover bg-background-card hover:bg-background-card-hover'
-        }`}
+      className="relative w-full h-56 rounded-lg flex flex-col items-center justify-center overflow-hidden cursor-pointer"
+      style={{
+        border: `2px dashed ${isDragActive ? 'var(--accent, #3B82F6)' : 'var(--border-mid, rgba(255,255,255,0.12))'}`,
+        background: isDragActive
+          ? 'rgba(59,130,246,0.05)'
+          : 'linear-gradient(180deg, var(--bg-inset, #0A0C12) 0%, var(--bg-card, #141820) 100%)',
+        boxShadow: isDragActive
+          ? 'inset 0 0 30px rgba(59,130,246,0.12)'
+          : '0 0 8px rgba(59,130,246,0.10)',
+        animation: isDragActive ? 'none' : 'borderGlow 3s ease-in-out infinite',
+        transition: 'border-color 0.2s ease, background 0.2s ease',
+      }}
     >
       <input
         type="file"
@@ -46,27 +61,56 @@ export default function UploadZone({ onFileSelect, accept = "image/*", label = "
       />
 
       {preview ? (
-        <div className="absolute inset-0 w-full h-full bg-background z-0">
-          {preview.type?.startsWith('image/') ? (
-            <img src={preview.url} alt="Preview" className="w-full h-full object-contain opacity-40 blur-sm" />
-          ) : preview.type?.startsWith('video/') ? (
-            <video src={preview.url} className="w-full h-full object-contain opacity-40 blur-sm" />
-          ) : null}
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center z-20">
-            <div className="bg-background-card backdrop-blur-md rounded-xl p-4 border border-border-subtle shadow-lg">
-              <p className="text-accent font-bold mb-1">File Added</p>
-              <p className="text-sm text-text-primary truncate max-w-xs">{preview.name || "Media File"}</p>
-              <p className="text-xs text-text-muted mt-2">Click or drag a new file to replace</p>
-            </div>
+        <div className="flex flex-col items-center justify-center z-20 text-center px-6">
+          <div className="flex items-center gap-2">
+            <Check size={14} style={{ color: 'var(--risk-clear, #34D399)' }} />
+            <span
+              className="text-[12px] font-medium truncate max-w-[200px]"
+              style={{ color: 'var(--text-1, #EDF0F7)' }}
+            >
+              {preview.name || 'File loaded'}
+            </span>
           </div>
+          <p
+            className="text-[10px] mt-1.5 flex items-center gap-1"
+            style={{ color: 'var(--text-3, #4A5264)' }}
+          >
+            <RefreshCw size={9} /> Drop new file to replace
+          </p>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center z-20 pointer-events-none text-center px-4">
-          <div className="w-16 h-16 rounded-full bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] flex items-center justify-center mb-4">
-            <UploadCloud size={32} className={isDragActive ? "text-accent" : "text-text-secondary"} />
+        <div className="flex flex-col items-center justify-center z-20 pointer-events-none text-center px-6">
+          <UploadCloud
+            size={32}
+            style={{
+              color: isDragActive
+                ? 'var(--accent, #3B82F6)'
+                : 'var(--text-3, #4A5264)',
+              marginBottom: '12px',
+              animation: 'breathe 3s ease-in-out infinite',
+            }}
+          />
+          <p className="text-[12px] font-medium" style={{ color: 'var(--text-2, #8B95A5)' }}>
+            {label}
+          </p>
+          <p className="text-[10px] mt-1" style={{ color: 'var(--text-3, #4A5264)' }}>
+            Supports high-res forensic analysis
+          </p>
+          <div className="flex gap-1.5 mt-3">
+            {FORMAT_BADGES.map((ext) => (
+              <span
+                key={ext}
+                className="text-[9px] px-1.5 py-0.5 rounded font-mono"
+                style={{
+                  background: 'var(--bg-elevated, #1C2130)',
+                  color: 'var(--text-3)',
+                  border: '1px solid var(--border-dim)',
+                }}
+              >
+                {ext}
+              </span>
+            ))}
           </div>
-          <p className="text-text-primary font-medium">{label}</p>
-          <p className="text-xs text-text-muted mt-2">Supports high-res forensic analysis</p>
         </div>
       )}
     </div>

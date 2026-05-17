@@ -5,35 +5,47 @@ export default function VerdictCard({ verdict }) {
   if (!verdict) return null;
 
   const vUpper = verdict.toUpperCase();
-  let color = '#22C55E';
-  let bgColor = 'rgba(34,197,94,0.1)';
-  let borderColor = 'rgba(34,197,94,0.3)';
-  let Icon = CheckCircle;
+
+  let color, Icon, glowColor;
 
   if (vUpper.includes('CRITICAL') || vUpper.includes('HIGH')) {
-    color = '#EF4444';
-    bgColor = 'rgba(239,68,68,0.1)';
-    borderColor = 'rgba(239,68,68,0.3)';
+    color = '#FB7185';
     Icon = ShieldAlert;
+    glowColor = 'rgba(251,113,133,0.12)';
   } else if (vUpper.includes('MEDIUM')) {
-    color = '#EAB308';
-    bgColor = 'rgba(234,179,8,0.1)';
-    borderColor = 'rgba(234,179,8,0.3)';
+    color = '#FBBF24';
     Icon = AlertTriangle;
+    glowColor = 'rgba(251,191,36,0.12)';
+  } else {
+    color = '#34D399';
+    Icon = CheckCircle;
+    glowColor = 'rgba(52,211,153,0.12)';
   }
 
   return (
     <div
-      className="p-4 rounded-xl border mt-4"
-      style={{ backgroundColor: bgColor, borderColor }}
+      className="rounded-lg p-3 mt-3"
+      style={{
+        background: `${color}0F`,
+        border: `1px solid ${color}26`,
+        boxShadow: `0 0 16px ${glowColor}`,
+      }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={20} style={{ color }} />
-        <span className="font-bold text-sm tracking-wider" style={{ color }}>VERDICT</span>
+      <div className="flex items-center gap-2 mb-1">
+        <Icon size={12} style={{ color }} />
+        <span
+          className="text-[9px] uppercase tracking-[0.12em] font-medium"
+          style={{ color }}
+        >
+          Verdict
+        </span>
       </div>
-      <div className="text-text-primary text-sm font-medium leading-relaxed">
+      <p
+        className="text-[12px] font-medium leading-snug"
+        style={{ color: 'var(--text-1, #EDF0F7)' }}
+      >
         {verdict}
-      </div>
+      </p>
     </div>
   );
 }
