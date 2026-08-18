@@ -40,9 +40,9 @@ describe('App', () => {
     );
 
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    expect(screen.getByText('Image Analysis')).toBeInTheDocument();
-    expect(screen.getByText('Video Analysis')).toBeInTheDocument();
-    expect(screen.getByText('Audio Analysis')).toBeInTheDocument();
+    expect(screen.getByText('Image')).toBeInTheDocument();
+    expect(screen.getByText('Video')).toBeInTheDocument();
+    expect(screen.getByText('Audio')).toBeInTheDocument();
     expect(screen.getByText('History')).toBeInTheDocument();
   });
 });

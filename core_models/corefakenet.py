@@ -424,18 +424,31 @@ class FastVideoProcessor:
         result = processor.analyze(video_path, sampling_fps=0.5)
     """
 
-    def __init__(self, model_path, device='cpu', quantize=False):
+    def __init__(self, model_path=None, model=None, device='cpu', quantize=False):
+        """
+        Args:
+            model_path: Path to a corefakenet.pth checkpoint to load fresh.
+            model: An already-loaded CorefakeNet instance to reuse instead
+                   (avoids a redundant disk load + parse when the caller -
+                   e.g. ModelRegistry, which already loads corefakenet for
+                   image fast mode - already has one in memory).
+            device: 'cpu' or 'cuda'.
+            quantize: Dynamic-quantize Linear layers for extra CPU speedup.
+        """
         self.device = torch.device(device)
-        self.model = CorefakeNet()
 
-        checkpoint = torch.load(model_path, map_location=self.device,
-                                weights_only=True)
-        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-            self.model.load_state_dict(checkpoint['model_state_dict'])
+        if model is not None:
+            self.model = model.to(self.device)
         else:
-            self.model.load_state_dict(checkpoint)
+            self.model = CorefakeNet()
+            checkpoint = torch.load(model_path, map_location=self.device,
+                                    weights_only=True)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                self.model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                self.model.load_state_dict(checkpoint)
+            self.model.to(self.device)
 
-        self.model.to(self.device)
         self.model.eval()
 
         if quantize and device == 'cpu':

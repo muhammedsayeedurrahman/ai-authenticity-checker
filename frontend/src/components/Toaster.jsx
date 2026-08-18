@@ -10,7 +10,7 @@ const ICONS = {
 };
 
 const STYLES = {
-  success: 'bg-risk-clearDim text-risk-clear border-[rgba(52,211,153,0.20)]',
+  success: 'bg-risk-clearDim text-risk-clear border-[rgba(34,197,94,0.20)]',
   error: 'bg-risk-criticalDim text-risk-critical border-[rgba(251,113,133,0.20)]',
   info: 'bg-accent-dim text-accent border-[rgba(59,130,246,0.20)]',
 };

@@ -22,11 +22,28 @@ def _ensure_model_files():
         urllib.request.urlretrieve(_CAFFEMODEL_URL, _CAFFEMODEL)
 
 
+_net_cache = None
+
+
+def get_face_net():
+    """Return the cached OpenCV DNN face detector, loading it once.
+
+    Parsing the Caffe model from disk is expensive - reloading it per
+    call (the previous behavior here, in video_analyzer.py's
+    FaceExtractor, and in utils/gradcam.py's detect_and_align_face) is
+    what made per-frame video analysis and training-time face alignment
+    dramatically slower than necessary.
+    """
+    global _net_cache
+    if _net_cache is None:
+        _ensure_model_files()
+        _net_cache = cv2.dnn.readNetFromCaffe(_PROTOTXT, _CAFFEMODEL)
+    return _net_cache
+
+
 def face_present(image_path, confidence_threshold=0.5):
     """Detect faces using OpenCV DNN (much more accurate than Haar cascade)."""
-    _ensure_model_files()
-
-    net = cv2.dnn.readNetFromCaffe(_PROTOTXT, _CAFFEMODEL)
+    net = get_face_net()
 
     img = cv2.imread(image_path)
     if img is None:

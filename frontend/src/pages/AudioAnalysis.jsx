@@ -5,6 +5,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import UploadZone from '../components/UploadZone';
 import RiskGauge from '../components/RiskGauge';
 import VerdictCard from '../components/VerdictCard';
+import AudioWaveform from '../components/AudioWaveform';
+import IndeterminateProgress from '../components/IndeterminateProgress';
 import useForensicStore from '../store/useForensicStore';
 
 export default function AudioAnalysis() {
@@ -44,6 +46,8 @@ export default function AudioAnalysis() {
         <div className="lg:col-span-1 space-y-4">
           <UploadZone onFileSelect={setFile} accept="audio/*" label="Upload Audio (WAV/MP3)" />
 
+          <AudioWaveform file={file} />
+
           <div className="flex gap-2">
             <button
               onClick={handleAnalyze}
@@ -65,6 +69,9 @@ export default function AudioAnalysis() {
               </button>
             )}
           </div>
+          {isAnalyzing && (
+            <IndeterminateProgress label="Analyzing spectral patterns…" />
+          )}
         </div>
 
         {/* Right: Results */}

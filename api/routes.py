@@ -6,6 +6,7 @@ Responses follow the envelope pattern: {success, data, error}.
 """
 
 import asyncio
+import base64
 import io
 import logging
 import os
@@ -76,8 +77,17 @@ MAGIC_BYTES: dict[str, list[bytes]] = {
     ".tiff": [b"II\x2a\x00", b"MM\x00\x2a"],
 }
 
-# Fields to strip from results before returning to clients
-_STRIP_FIELDS = {"gradcam_image", "original_image"}
+# Fields to strip from results before returning to clients — gradcam_image
+# is handled separately (serialized to base64) rather than stripped, since
+# the frontend heatmap viewer needs it.
+_STRIP_FIELDS = {"original_image"}
+
+
+def _pil_to_base64(img: Image.Image) -> str:
+    """Bare base64 PNG payload (no data-URI prefix — the frontend adds it)."""
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
 def _validate_magic_bytes(contents: bytes, ext: str) -> None:
@@ -131,8 +141,17 @@ async def _run_with_timeout(
     **kwargs: Any,
 ) -> Any:
     """Run a sync function in a thread pool with a timeout and GPU semaphore."""
+    # Wait up to the same budget as the analysis itself to *acquire* the
+    # semaphore, not a fixed 5s. With concurrency capped at 1 (see
+    # _MAX_CONCURRENT_INFERENCE) and video/multimodal routinely taking well
+    # over 5s - up to TIMEOUT_VIDEO=600s in ensemble mode - a second request
+    # arriving while the first is still legitimately running used to get
+    # rejected with "Server busy" after only 5s, even though the first
+    # request wasn't stuck. Queuing behind it for the same budget the
+    # analysis itself gets is the correct behavior; a genuinely wedged
+    # request still eventually times out via the acquire wait_for below.
     try:
-        await asyncio.wait_for(_inference_semaphore.acquire(), timeout=5.0)
+        await asyncio.wait_for(_inference_semaphore.acquire(), timeout=timeout)
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=503,
@@ -182,6 +201,14 @@ async def _save_and_build_response(
         and k not in _STRIP_FIELDS
     }
 
+    # GradCAM is a PIL Image in the raw pipeline result — the generic pass
+    # above would pass it through unconverted (and fail Pydantic validation,
+    # which expects a str). Overwrite with a base64-serialized version when
+    # the response model declares the field (currently only ImageAnalysisResult).
+    gradcam = pipeline_result.get("gradcam_image")
+    if isinstance(gradcam, Image.Image) and "gradcam_image" in result_model.model_fields:
+        response_fields["gradcam_image"] = _pil_to_base64(gradcam)
+
     return analysis_id, timestamp, response_fields
 
 
@@ -226,8 +253,9 @@ async def api_analyze_image(
 async def api_analyze_video(
     request: Request,
     file: UploadFile = File(...),
-    fps: float = Query(4.0, ge=0.5, le=30),
+    fps: float = Query(1.0, ge=0.5, le=30),
     aggregation: str = Query("weighted_avg"),
+    mode: str = Query("ensemble", pattern="^(ensemble|fast)$"),
     current_user: Optional[dict] = Depends(get_current_user),
 ):
     """Analyze an uploaded video for deepfake indicators."""
@@ -244,7 +272,8 @@ async def api_analyze_video(
             tmp_path = tmp.name
 
         result = await _run_with_timeout(
-            analyze_video, TIMEOUT_VIDEO, tmp_path, fps=fps, aggregation=aggregation,
+            analyze_video, TIMEOUT_VIDEO, tmp_path,
+            fps=fps, aggregation=aggregation, mode=mode,
         )
     finally:
         _safe_tmp_remove(tmp_path)

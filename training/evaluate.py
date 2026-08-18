@@ -42,7 +42,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from training.dataset_portraits import (
-    load_portrait_dataset, PortraitDataset, PORTRAIT_SOURCES, VAL_TRANSFORM,
+    load_portrait_dataset, PORTRAIT_SOURCES, VAL_TRANSFORM,
 )
 
 
@@ -430,7 +430,6 @@ def cross_dataset_eval(device, samples_per_source=500):
         print(f"\n--- Testing on: {source_id} ---")
 
         try:
-            samples = []
             from training.dataset_portraits import collect_from_source
             per_class = samples_per_source // 2
             source_samples = collect_from_source(

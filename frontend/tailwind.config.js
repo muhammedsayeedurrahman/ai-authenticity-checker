@@ -35,20 +35,20 @@ export default {
           clear:       'var(--risk-clear)',
           caution:     'var(--risk-caution)',
           critical:    'var(--risk-critical)',
-          clearDim:    'rgba(52,211,153,0.10)',
-          cautionDim:  'rgba(251,191,36,0.10)',
+          clearDim:    'rgba(34,197,94,0.10)',
+          cautionDim:  'rgba(250,204,21,0.10)',
           criticalDim: 'rgba(251,113,133,0.10)',
         },
       },
       boxShadow: {
-        'card':       '0 2px 8px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.03)',
-        'card-hover': '0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(59,130,246,0.20), 0 0 20px rgba(59,130,246,0.15)',
+        'card':       '0 4px 24px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.03)',
+        'card-hover': '0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(59,130,246,0.22), 0 0 24px rgba(59,130,246,0.16)',
         'modal':      '0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)',
         'glow-blue':   '0 0 20px rgba(59,130,246,0.20)',
-        'glow-cyan':   '0 0 20px rgba(6,182,212,0.10)',
-        'glow-green':  '0 0 12px rgba(52,211,153,0.15)',
+        'glow-cyan':   '0 0 20px rgba(56,189,248,0.10)',
+        'glow-green':  '0 0 12px rgba(34,197,94,0.15)',
         'glow-red':    '0 0 12px rgba(251,113,133,0.15)',
-        'glow-amber':  '0 0 12px rgba(251,191,36,0.15)',
+        'glow-amber':  '0 0 12px rgba(250,204,21,0.15)',
       },
       fontFamily: {
         sans:    ['Inter', 'system-ui', 'sans-serif'],
@@ -56,7 +56,11 @@ export default {
         display: ['"Space Grotesk"', 'Inter', 'sans-serif'],
       },
       borderRadius: {
-        DEFAULT: '10px',
+        DEFAULT: '12px',
+        // Distinct key (not `lg`, which 17+ files already use for small
+        // icon boxes/toasts at Tailwind's default 8px) — the generous
+        // 18-22px "premium" radius is applied only via .card/.card-elevated
+        // in index.css, which reference var(--radius-lg) directly.
       },
       animation: {
         'fade-in':  'fadeIn 0.35s ease-out',

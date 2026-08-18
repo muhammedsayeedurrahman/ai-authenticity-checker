@@ -41,6 +41,8 @@ Thumbs.db
 
 # Database
 proofyx_history.db
+proofyx_history.db.pre_merge_backup
+proofyx_history.db.*
 
 # Temp files
 *.tmp

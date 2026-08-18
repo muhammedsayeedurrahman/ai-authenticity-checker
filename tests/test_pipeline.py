@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 
 import pytest
 from PIL import Image
@@ -65,12 +64,12 @@ class TestForensicScore:
 
 class TestVerdict:
     @pytest.mark.parametrize("risk,expected", [
-        (0.0, Verdict.LIKELY_AUTHENTIC),
-        (0.20, Verdict.LIKELY_AUTHENTIC),
-        (0.35, Verdict.UNCERTAIN),
-        (0.50, Verdict.POSSIBLY_MANIPULATED),
-        (0.75, Verdict.LIKELY_MANIPULATED),
-        (1.0, Verdict.LIKELY_MANIPULATED),
+        (0.0, Verdict.AUTHENTIC),
+        (0.20, Verdict.AUTHENTIC),
+        (0.59, Verdict.AUTHENTIC),
+        (0.60, Verdict.AI_GENERATED),
+        (0.75, Verdict.AI_GENERATED),
+        (1.0, Verdict.AI_GENERATED),
     ])
     def test_from_risk_score(self, risk, expected):
         assert Verdict.from_risk_score(risk) == expected

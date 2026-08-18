@@ -60,11 +60,11 @@ export const forensicApi = {
     return response.data;
   },
 
-  analyzeVideo: async (file, fps = 4, aggregation = 'weighted_avg', { signal } = {}) => {
+  analyzeVideo: async (file, fps = 1, aggregation = 'weighted_avg', mode = 'ensemble', { signal } = {}) => {
     const formData = new FormData();
     formData.append('file', file);
     const response = await api.post(
-      `/api/v1/analyze/video?fps=${fps}&aggregation=${aggregation}`,
+      `/api/v1/analyze/video?fps=${fps}&aggregation=${aggregation}&mode=${mode}`,
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' }, signal },
     );

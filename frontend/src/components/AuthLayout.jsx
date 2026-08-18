@@ -14,7 +14,7 @@ export default function AuthLayout({ title, children }) {
         style={{
           background: `
             radial-gradient(ellipse 60% 60% at 50% 40%, rgba(59,130,246,0.10) 0%, transparent 70%),
-            radial-gradient(ellipse 40% 50% at 70% 60%, rgba(6,182,212,0.06) 0%, transparent 60%)
+            radial-gradient(ellipse 40% 50% at 70% 60%, rgba(56,189,248,0.06) 0%, transparent 60%)
           `,
         }}
       />

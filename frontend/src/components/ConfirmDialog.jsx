@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle } from 'lucide-react';
 
 /**
@@ -61,66 +62,76 @@ export default function ConfirmDialog({
     }
   }, []);
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-title"
-    >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onCancel}
-        aria-hidden="true"
-      />
-
-      {/* Dialog */}
-      <div
-        ref={dialogRef}
-        onKeyDown={handleKeyDown}
-        className="relative z-10 w-full max-w-sm rounded-xl p-6 bg-bg-card border border-border-mid shadow-modal"
-      >
-        <div className="flex items-start gap-3 mb-4">
-          <div
-            className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 border ${
-              danger
-                ? 'bg-risk-criticalDim border-[rgba(251,113,133,0.20)]'
-                : 'bg-accent-dim border-accent/20'
-            }`}
-          >
-            <AlertTriangle size={16} className={danger ? 'text-risk-critical' : 'text-accent'} />
-          </div>
-          <div>
-            <h2 id="confirm-title" className="text-sm font-semibold text-text-1">
-              {title}
-            </h2>
-            <p className="text-xs mt-1 text-text-2 leading-relaxed">
-              {message}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
+    <AnimatePresence>
+      {open && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-title"
+        >
+          {/* Backdrop */}
+          <motion.div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={onCancel}
-            className="btn-ghost text-xs"
+            aria-hidden="true"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          />
+
+          {/* Dialog */}
+          <motion.div
+            ref={dialogRef}
+            onKeyDown={handleKeyDown}
+            className="relative z-10 w-full max-w-sm rounded-xl p-6 bg-bg-card border border-border-mid shadow-modal"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.2 }}
           >
-            Cancel
-          </button>
-          <button
-            ref={confirmRef}
-            type="button"
-            onClick={onConfirm}
-            className={`${danger ? 'btn-danger' : 'btn-primary'} text-xs`}
-          >
-            {confirmLabel}
-          </button>
+            <div className="flex items-start gap-3 mb-4">
+              <div
+                className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 border ${
+                  danger
+                    ? 'bg-risk-criticalDim border-[rgba(251,113,133,0.20)]'
+                    : 'bg-accent-dim border-accent/20'
+                }`}
+              >
+                <AlertTriangle size={16} className={danger ? 'text-risk-critical' : 'text-accent'} />
+              </div>
+              <div>
+                <h2 id="confirm-title" className="text-sm font-semibold text-text-1">
+                  {title}
+                </h2>
+                <p className="text-xs mt-1 text-text-2 leading-relaxed">
+                  {message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="btn-ghost text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                ref={confirmRef}
+                type="button"
+                onClick={onConfirm}
+                className={`${danger ? 'btn-danger' : 'btn-primary'} text-xs`}
+              >
+                {confirmLabel}
+              </button>
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 }

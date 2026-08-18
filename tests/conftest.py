@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 # Force SQLite for tests
 os.environ.setdefault("DATABASE_URL", "")
@@ -36,10 +38,28 @@ def _mock_registry():
 
 
 @pytest.fixture()
-def client(_mock_registry):
-    """FastAPI TestClient with mocked model registry."""
+def client(_mock_registry, monkeypatch):
+    """FastAPI TestClient with mocked model registry and an isolated in-memory DB.
+
+    Entering TestClient as a context manager runs the app's `lifespan`, which
+    calls `init_db()` to create tables. The engine/session factory are
+    monkeypatched beforehand so that call creates tables on an isolated
+    in-memory SQLite DB instead of the real on-disk one.
+    """
+    import db.database as database
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(database, "_engine", engine)
+    monkeypatch.setattr(database, "_session_factory", factory)
+
     from main import app
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture()

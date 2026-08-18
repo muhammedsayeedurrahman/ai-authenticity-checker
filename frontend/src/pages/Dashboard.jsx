@@ -1,11 +1,18 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Film, Mic, Layers, Clock, Cpu, Upload, FileSearch, ArrowUpRight } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Image, Film, Mic, Layers, Clock, Shield, Cpu, Upload, FileSearch, ArrowUpRight, CalendarClock, Timer } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import useForensicStore from '../store/useForensicStore';
 import EmptyDashboard from '../components/EmptyDashboard';
-import { getRiskColorRaw, getRiskBg, normalizeScore } from '../utils/risk';
+import RiskGauge from '../components/RiskGauge';
+import RiskBadge from '../components/RiskBadge';
+import VerdictChip from '../components/VerdictChip';
+import AnimatedNumber from '../components/AnimatedNumber';
+import RiskTrendChart from '../components/RiskTrendChart';
+import RiskDistributionChart from '../components/RiskDistributionChart';
+import { staggerFadeUp } from '../utils/animations';
+import { normalizeScore } from '../utils/risk';
 import { formatRelativeTime, detectMediaRoute } from '../utils/format';
-import { Image } from 'lucide-react';
 
 const MEDIA_ICONS = { image: Image, video: Film, audio: Mic, multimodal: Layers };
 const ANALYSIS_CARDS = [
@@ -14,11 +21,15 @@ const ANALYSIS_CARDS = [
   { to: '/audio', label: 'Audio', desc: 'Voice cloning & spectrogram forensics', icon: Mic },
   { to: '/multimodal', label: 'Multimodal', desc: 'Cross-modal fusion confidence matrix', icon: Layers },
 ];
-const STAT_DEFS = (totals, models, cleared) => [
-  { label: 'Total Scans', value: totals, icon: FileSearch, iconClass: 'text-accent' },
-  { label: 'Avg Risk', value: null, icon: Image, iconClass: 'text-risk-caution' },
-  { label: 'Models Active', value: models, icon: Cpu, iconClass: 'text-accent' },
-  { label: 'Cleared', value: cleared, icon: Image, iconClass: 'text-risk-clear' },
+// Neutral stat tiles only — Avg Risk gets its own hero gauge card, not a plain tile.
+// `animated: false` for Models Active — it's a ratio ("4/13"), not a single
+// count-up-able number.
+const STAT_DEFS = (totals, todayScans, models, cleared, avgProcessingSec) => [
+  { label: 'Total Scans', value: totals, icon: FileSearch, iconClass: 'text-text-2', animated: true },
+  { label: "Today's Scans", value: todayScans, icon: CalendarClock, iconClass: 'text-text-2', animated: true },
+  { label: 'Models Active', value: models, icon: Cpu, iconClass: 'text-text-2', animated: false },
+  { label: 'Cleared', value: cleared, icon: Shield, iconClass: 'text-risk-clear', animated: true },
+  { label: 'Avg Process Time', value: avgProcessingSec, icon: Timer, iconClass: 'text-text-2', animated: true, decimals: 1, suffix: 's' },
 ];
 
 export default function Dashboard() {
@@ -47,6 +58,12 @@ export default function Dashboard() {
   }, { clear: 0, caution: 0, critical: 0 });
   const avgRisk = historyTotal > 0
     ? Math.round(history.reduce((s, i) => s + normalizeScore(i.risk_score), 0) / history.length) : 0;
+  const todayScans = history.filter(
+    (i) => new Date(i.timestamp).toDateString() === new Date().toDateString(),
+  ).length;
+  const avgProcessingSec = historyTotal > 0
+    ? history.reduce((s, i) => s + (i.processing_time_ms || 0), 0) / history.length / 1000
+    : 0;
 
   const handleDrop = useCallback((e) => {
     e.preventDefault(); setDragOver(false);
@@ -59,20 +76,18 @@ export default function Dashboard() {
   /* Empty state */
   if (historyTotal === 0 && !isStatusLoading) {
     return (
-      <div className="space-y-5">
-        <div>
-          <h1 className="font-display text-xl font-bold tracking-tight gradient-text">Forensics Command Center</h1>
-          <p className="text-xs mt-0.5 text-text-3">AI-powered deepfake detection & media authentication</p>
-        </div>
+      <motion.div initial="hidden" animate="visible" className="space-y-5">
+        <motion.div variants={staggerFadeUp} custom={0}>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-text-1">Forensics Command Center</h1>
+          <p className="text-sm mt-1 text-text-2 leading-relaxed">AI-powered deepfake detection & media authentication</p>
+        </motion.div>
         <EmptyDashboard />
-      </div>
+      </motion.div>
     );
   }
 
-  const barTotal = riskCounts.clear + riskCounts.caution + riskCounts.critical || 1;
   const recentScans = history.slice(0, 5);
-  const stats = STAT_DEFS(historyTotal, `${modelsOnline}/${totalModels}`, riskCounts.clear);
-  stats[1].value = `${avgRisk}%`;
+  const stats = STAT_DEFS(historyTotal, todayScans, `${modelsOnline}/${totalModels}`, riskCounts.clear, avgProcessingSec);
 
   return (
     <div className="space-y-5"
@@ -82,48 +97,49 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="font-display text-xl font-bold tracking-tight gradient-text">Forensics Command Center</h1>
-          <p className="text-xs mt-0.5 text-text-3">AI-powered deepfake detection & media authentication</p>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-text-1">Forensics Command Center</h1>
+          <p className="text-sm mt-1 text-text-2 leading-relaxed">AI-powered deepfake detection & media authentication</p>
         </div>
         <span className="text-xs font-mono text-text-3">{modelsOnline}/{totalModels} models online</span>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {stats.map(({ label, value, icon, iconClass }) => {
-          const Icon = icon;
-          return (
+      {/* Hero: Avg Risk gauge + secondary stat stack */}
+      <motion.div variants={staggerFadeUp} custom={1} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="md:col-span-2 card flex items-center gap-6 flex-wrap sm:flex-nowrap">
+          <RiskGauge percentage={avgRisk} size={128} label="Avg Risk" />
+          <div>
+            <span className="label-tag">Average Risk Score</span>
+            <p className="text-xs mt-1 text-text-3">
+              Across {historyTotal} recorded scan{historyTotal !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {stats.map(({ label, value, icon: Icon, iconClass, animated, decimals, suffix }) => (
             <div key={label} className="card">
               <div className="flex items-center gap-2 mb-2">
                 <Icon size={14} className={iconClass} />
                 <span className="label-tag">{label}</span>
               </div>
-              <p className="font-display text-lg font-bold text-text-1">{value}</p>
+              <p className="font-display text-lg font-bold text-text-1">
+                {animated ? <AnimatedNumber value={value} decimals={decimals || 0} suffix={suffix || ''} /> : value}
+              </p>
             </div>
-          );
-        })}
-      </div>
-
-      {/* Risk breakdown bar */}
-      {historyTotal > 0 && (
-        <div className="card">
-          <span className="label-tag mb-3 block">Risk Distribution</span>
-          <div className="flex gap-1 h-3 rounded-full overflow-hidden">
-            <div className="rounded-l-full bg-risk-clear" style={{ width: `${(riskCounts.clear / barTotal) * 100}%` }} />
-            <div className="bg-risk-caution" style={{ width: `${(riskCounts.caution / barTotal) * 100}%` }} />
-            <div className="rounded-r-full bg-risk-critical" style={{ width: `${(riskCounts.critical / barTotal) * 100}%` }} />
-          </div>
-          <div className="flex gap-6 mt-2">
-            {[{ l: 'cleared', c: riskCounts.clear, cls: 'bg-risk-clear' },
-              { l: 'caution', c: riskCounts.caution, cls: 'bg-risk-caution' },
-              { l: 'critical', c: riskCounts.critical, cls: 'bg-risk-critical' }].map((b) => (
-              <span key={b.l} className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${b.cls}`} />
-                <span className="text-xs font-mono text-text-3">{b.c} {b.l}</span>
-              </span>
-            ))}
-          </div>
+          ))}
         </div>
+      </motion.div>
+
+      {/* Risk trend + distribution charts */}
+      {historyTotal > 0 && (
+        <motion.div variants={staggerFadeUp} custom={2} className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="lg:col-span-2">
+            <RiskTrendChart history={history} />
+          </div>
+          <div className="lg:col-span-1">
+            <RiskDistributionChart counts={riskCounts} total={historyTotal} />
+          </div>
+        </motion.div>
       )}
 
       {/* Quick upload + analysis cards */}
@@ -181,12 +197,12 @@ export default function Dashboard() {
                 <th className="px-4 py-2 font-medium">Time</th>
                 <th className="px-4 py-2 font-medium">Type</th>
                 <th className="px-4 py-2 font-medium">File</th>
+                <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium text-right">Risk</th>
               </tr>
             </thead>
             <tbody>
               {recentScans.map((item) => {
-                const pct = normalizeScore(item.risk_score);
                 const Icon = MEDIA_ICONS[item.media_type] || FileSearch;
                 return (
                   <tr key={item.id} className="border-t border-border-dim cursor-pointer table-row-hover"
@@ -194,10 +210,11 @@ export default function Dashboard() {
                     <td className="px-4 py-2 text-xs font-mono text-text-3">{formatRelativeTime(item.created_at || item.timestamp)}</td>
                     <td className="px-4 py-2"><Icon size={14} className="text-text-2" /></td>
                     <td className="px-4 py-2 truncate max-w-[200px] text-text-1">{item.file_name || `${item.media_type} analysis`}</td>
+                    <td className="px-4 py-2">
+                      <VerdictChip verdict={item.verdict} riskScore={normalizeScore(item.risk_score)} />
+                    </td>
                     <td className="px-4 py-2 text-right">
-                      <span className="text-xs font-bold font-mono px-2 py-0.5 rounded" style={{ color: getRiskColorRaw(pct), background: getRiskBg(pct) }}>
-                        {pct.toFixed(0)}%
-                      </span>
+                      <RiskBadge score={item.risk_score} />
                     </td>
                   </tr>
                 );

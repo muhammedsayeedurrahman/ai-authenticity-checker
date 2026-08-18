@@ -11,9 +11,9 @@ import React from 'react';
  */
 export default function PageHeader({ icon: Icon, title, subtitle, gradient = false, actions }) {
   return (
-    <header className="flex items-start justify-between flex-wrap gap-4">
+    <header className="flex items-start justify-between flex-wrap gap-5 mb-1">
       <div>
-        <div className="flex items-center gap-2.5 mb-1">
+        <div className="flex items-center gap-3 mb-1.5">
           {Icon && (
             <div
               className="w-7 h-7 rounded-lg flex items-center justify-center bg-accent-dim border border-accent/20"
@@ -22,13 +22,13 @@ export default function PageHeader({ icon: Icon, title, subtitle, gradient = fal
             </div>
           )}
           <h1
-            className={`font-display text-lg font-bold tracking-tight ${gradient ? 'gradient-text' : 'text-text-1'}`}
+            className={`font-display text-2xl font-bold tracking-tight ${gradient ? 'gradient-text' : 'text-text-1'}`}
           >
             {title}
           </h1>
         </div>
         {subtitle && (
-          <p className="text-sm text-text-2">{subtitle}</p>
+          <p className="text-sm text-text-2 leading-relaxed">{subtitle}</p>
         )}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}

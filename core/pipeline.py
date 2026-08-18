@@ -87,6 +87,7 @@ class ModelRegistry:
         self.video_analyzer = None
         self.audio_analyzer = None
         self.freq_analyzer = None
+        self.fast_video_processor = None
 
         self._load_all()
 
@@ -202,6 +203,13 @@ class ModelRegistry:
             self.loaded.append("corefakenet")
             epoch = ckpt.get("epoch", "?") if isinstance(ckpt, dict) else "?"
             logger.info("CorefakeNet loaded (epoch %s)", epoch)
+
+            # Reuse the same in-memory model for video's "fast" mode instead
+            # of loading a second copy from disk.
+            from core_models.corefakenet import FastVideoProcessor
+            self.fast_video_processor = FastVideoProcessor(
+                model=model, device=str(self.device),
+            )
         except (RuntimeError, FileNotFoundError, ImportError, KeyError) as e:
             logger.warning("Could not load CorefakeNet: %s", e)
             self.missing.append("corefakenet (error)")
@@ -302,6 +310,7 @@ class ModelRegistry:
             "missing": list(self.missing),
             "total": len(self.loaded),
             "corefakenet_ready": "corefakenet" in self.models,
+            "device": str(self.device),
         }
 
 
@@ -734,6 +743,85 @@ def _analyze_image_fast(
 # Video Analysis
 # ──────────────────────────────────────────────
 
+def _analyze_video_fast(
+    video_path: str,
+    fps: float,
+    start_time: float,
+    progress_callback: Optional[Callable] = None,
+) -> dict[str, Any]:
+    """Fast video path: single CorefakeNet pass/frame via FastVideoProcessor.
+
+    Verdict/confidence/risk_level are computed the same standardized way as
+    the ensemble path (Verdict.from_risk_score etc.) so callers can't tell
+    which mode ran from those fields alone - only processing_time_ms and
+    the smaller per-frame model_scores dict differ.
+    """
+    reg = get_registry()
+    if reg.fast_video_processor is None:
+        return _empty_result(
+            "video", start_time,
+            error="Fast video mode not available (CorefakeNet not loaded)",
+        )
+
+    def _progress(current, total, message):
+        if progress_callback:
+            progress_callback(current, total, message)
+
+    # fps here means "samples per second" same as ensemble mode; fast mode's
+    # single-model-per-frame cost is low enough that it doesn't need the
+    # same aggressive downsampling, but still respect the caller's rate.
+    result = reg.fast_video_processor.analyze(
+        video_path, sampling_fps=max(fps, 0.5), progress_callback=_progress,
+    )
+
+    if "error" in result:
+        return _empty_result("video", start_time, error=result["error"])
+
+    risk_score = result["final_risk"]
+    risk_pct = risk_score * 100
+    verdict = Verdict.from_risk_score(risk_score)
+    confidence_enum = Confidence.from_risk_score(risk_score)
+
+    frame_results = result.get("frame_results", [])
+    risk_timeline = [fr["final_risk"] for fr in frame_results]
+    if len(risk_timeline) > 1:
+        variance = float(np.var(risk_timeline))
+        jumps = [abs(risk_timeline[i] - risk_timeline[i - 1])
+                 for i in range(1, len(risk_timeline))]
+        max_jump = max(jumps)
+        significant_jumps = sum(1 for j in jumps if j > 0.15)
+    else:
+        variance, max_jump, significant_jumps = 0.0, 0.0, 0
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+    return {
+        "risk_score": risk_score,
+        "risk_percent": risk_pct,
+        "verdict": verdict.value,
+        "confidence": confidence_enum.value,
+        "risk_level": RiskLevel.from_risk_score(risk_score).value,
+        "prediction": result.get("prediction", "UNKNOWN"),
+        "total_frames_analyzed": result.get("total_frames_analyzed", 0),
+        "fake_frames": result.get("fake_frames", 0),
+        "real_frames": result.get("real_frames", 0),
+        "faces_detected_in_frames": result.get("faces_detected_in_frames", 0),
+        "frame_results": frame_results,
+        "model_scores": result.get("model_scores", {}),
+        "temporal_analysis": {
+            "score_variance": variance,
+            "max_frame_jump": max_jump,
+            "significant_jumps": significant_jumps,
+            "risk_timeline": risk_timeline,
+        },
+        "video_info": result.get("video_info", {}),
+        "aggregation_method": "corefakenet_confidence_weighted",
+        "fusion_mode": "corefakenet_fast",
+        "processing_time_ms": elapsed_ms,
+        "media_type": "video",
+    }
+
+
 def _format_frame_details(frame_results: list[dict]) -> str:
     """Format frame results as a whitespace-delimited table for FrameTable UI."""
     if not frame_results:
@@ -804,14 +892,27 @@ def analyze_video(
     video_path: str,
     fps: float = 4.0,
     aggregation: str = "weighted_avg",
+    mode: str = "ensemble",
     progress_callback: Optional[Callable] = None,
 ) -> dict[str, Any]:
     """
     Analyze video for deepfake indicators.
     Returns plain dict — see docs/ARCHITECTURE.md for schema.
+
+    mode:
+        "ensemble" (default) — 7-model ensemble per sampled frame. Thorough
+            but slow on CPU (~10s/frame with all 7 models, including two
+            transformers).
+        "fast" — single CorefakeNet pass per frame via FastVideoProcessor
+            (core_models/corefakenet.py). ~7x fewer forward passes per
+            frame; combined with a lower sampling rate this is what makes
+            a multi-minute analysis land in single-digit seconds.
     """
     start_time = time.perf_counter()
     reg = get_registry()
+
+    if mode == "fast":
+        return _analyze_video_fast(video_path, fps, start_time, progress_callback)
 
     if reg.video_analyzer is None:
         return _empty_result("video", start_time, error="VideoAnalyzer not available")

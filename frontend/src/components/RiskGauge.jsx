@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getRiskColorRaw, getRiskLevel } from '../utils/risk';
+import AnimatedNumber from './AnimatedNumber';
 
 export default function RiskGauge({ percentage, label = 'AI Risk Score', size = 160 }) {
   const [animated, setAnimated] = useState(false);
@@ -7,6 +8,11 @@ export default function RiskGauge({ percentage, label = 'AI Risk Score', size = 
   const radius = size * 0.38;
   const circumference = 2 * Math.PI * radius;
   const strokeWidth = 6;
+  // Text scales with `size` instead of a fixed class — at small sizes
+  // (e.g. the Dashboard hero gauge) a fixed text-2xl overlapped the ring.
+  const numberSize = Math.max(14, Math.round(size * 0.16));
+  const percentSize = Math.max(9, Math.round(size * 0.075));
+  const labelSize = Math.max(9, Math.round(size * 0.075));
   const color = getRiskColorRaw(percentage);
   const offset = animated ? ((100 - percentage) / 100) * circumference : circumference;
 
@@ -43,10 +49,14 @@ export default function RiskGauge({ percentage, label = 'AI Risk Score', size = 
         </svg>
 
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-display font-bold tracking-tight text-2xl leading-none text-text-1">
-            {percentage.toFixed(1)}<span className="text-xs">%</span>
+          <span
+            className="font-display font-bold tracking-tight leading-none text-text-1"
+            style={{ fontSize: numberSize }}
+          >
+            <AnimatedNumber value={percentage} decimals={1} />
+            <span style={{ fontSize: percentSize }}>%</span>
           </span>
-          <span className="text-xs mt-1 text-text-3">
+          <span className="mt-1 text-text-3" style={{ fontSize: labelSize }}>
             {label}
           </span>
         </div>

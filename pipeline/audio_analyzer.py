@@ -12,7 +12,6 @@ Integrates Wav2Vec2 (primary) and the zo9999 CNN mel-spectrogram model (fallback
 
 import os
 import sys
-import tempfile
 import logging
 import numpy as np
 

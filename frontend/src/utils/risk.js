@@ -32,14 +32,14 @@ export function getRiskColor(pct) {
 
 export function getRiskColorRaw(pct) {
   if (pct > HIGH_THRESHOLD) return '#FB7185';
-  if (pct > MEDIUM_THRESHOLD) return '#FBBF24';
-  return '#34D399';
+  if (pct > MEDIUM_THRESHOLD) return '#FACC15';
+  return '#22C55E';
 }
 
 export function getRiskBg(pct) {
   if (pct > HIGH_THRESHOLD) return 'rgba(251,113,133,0.10)';
-  if (pct > MEDIUM_THRESHOLD) return 'rgba(251,191,36,0.10)';
-  return 'rgba(52,211,153,0.10)';
+  if (pct > MEDIUM_THRESHOLD) return 'rgba(250,204,21,0.10)';
+  return 'rgba(34,197,94,0.10)';
 }
 
 export function getRiskLabel(pct) {
@@ -56,6 +56,33 @@ export function getRiskLevel(pct) {
 
 export function getRiskGlow(pct) {
   if (pct > HIGH_THRESHOLD) return 'rgba(251,113,133,0.4)';
-  if (pct > MEDIUM_THRESHOLD) return 'rgba(251,191,36,0.4)';
-  return 'rgba(52,211,153,0.4)';
+  if (pct > MEDIUM_THRESHOLD) return 'rgba(250,204,21,0.4)';
+  return 'rgba(34,197,94,0.4)';
+}
+
+/**
+ * Risk tier ('critical' | 'caution' | 'clear') for a verdict.
+ *
+ * Primary signal is the numeric risk score when available; keyword
+ * matching on the verdict text is a fallback only. Order matters: critical
+ * is checked first, then caution, then fallback to clear.
+ */
+const CRITICAL_KEYWORDS = ['critical', 'fake', 'manipulat', 'deepfake', 'synthetic', 'forged', 'altered'];
+const CAUTION_KEYWORDS = ['medium', 'suspicious', 'caution', 'uncertain', 'inconclusive', 'partial'];
+const CLEAR_KEYWORDS = ['authentic', 'genuine', 'real', 'clear', 'low'];
+
+export function classifyVerdict(verdict, riskScore) {
+  if (riskScore != null && typeof riskScore === 'number') {
+    if (riskScore > HIGH_THRESHOLD) return 'critical';
+    if (riskScore > MEDIUM_THRESHOLD) return 'caution';
+    return 'clear';
+  }
+
+  const lower = (verdict || '').toLowerCase();
+  if (CRITICAL_KEYWORDS.some((kw) => lower.includes(kw))) return 'critical';
+  if (CAUTION_KEYWORDS.some((kw) => lower.includes(kw))) return 'caution';
+  if (CLEAR_KEYWORDS.some((kw) => lower.includes(kw))) return 'clear';
+
+  // Default to caution when unable to classify
+  return 'caution';
 }

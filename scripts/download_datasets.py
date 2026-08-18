@@ -408,17 +408,17 @@ def main():
 
     if args.stats:
         size, files = get_cache_stats(cache_dir)
-        print(f"\nCache statistics:")
+        print("\nCache statistics:")
         print(f"  Total size: {size / 1024 / 1024:.1f} MB")
         print(f"  Total files: {files}")
 
         local = get_local_stats()
         if local:
-            print(f"\nLocal samples (data/samples/):")
+            print("\nLocal samples (data/samples/):")
             for slug, counts in local.items():
                 print(f"  {slug:<50s} real={counts['real']:>4d}  fake={counts['fake']:>4d}")
         else:
-            print(f"\nNo local samples yet. Run without --stats to download.")
+            print("\nNo local samples yet. Run without --stats to download.")
         return
 
     save_local = not args.no_local
@@ -485,7 +485,7 @@ def main():
         local = get_local_stats()
         if local:
             print(f"\n  Local samples saved to: {os.path.join(DATA_DIR, 'samples')}")
-            print(f"  Browse the folders to see real vs fake examples:")
+            print("  Browse the folders to see real vs fake examples:")
             for slug, counts in local.items():
                 print(f"    {slug}/real/  ({counts['real']} images)")
                 print(f"    {slug}/fake/  ({counts['fake']} images)")

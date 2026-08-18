@@ -1,22 +1,41 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Film, Play, Settings2, ShieldCheck, X } from 'lucide-react';
+import { Film, Play, Settings2, ShieldCheck, X, Zap } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
 import UploadZone from '../components/UploadZone';
 import RiskGauge from '../components/RiskGauge';
 import VerdictCard from '../components/VerdictCard';
 import FrameTable from '../components/FrameTable';
+import VideoRiskTimeline from '../components/VideoRiskTimeline';
+import IndeterminateProgress from '../components/IndeterminateProgress';
 import useForensicStore from '../store/useForensicStore';
+
+const MODES = [
+  {
+    value: 'ensemble',
+    label: 'Full Ensemble',
+    sub: '7 models/frame -- Most thorough, slow on CPU',
+  },
+  {
+    value: 'fast',
+    label: 'Fast Mode',
+    sub: 'CorefakeNet single-pass -- Seconds, not minutes',
+  },
+];
 
 export default function VideoAnalysis() {
   const [file, setFile] = useState(null);
-  const [fps, setFps] = useState(2);
+  const [fps, setFps] = useState(1);
   const [aggregation, setAggregation] = useState('weighted_avg');
+  const [mode, setMode] = useState(MODES[0].value);
   const [videoUrl, setVideoUrl] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const blobUrlRef = useRef(null);
-  const { videoAnalysis, runVideoAnalysis, clearAnalysis, pendingFile, clearPendingFile } = useForensicStore();
+  const {
+    videoAnalysis, runVideoAnalysis, clearAnalysis, pendingFile, clearPendingFile, systemStatus,
+  } = useForensicStore();
   const { isAnalyzing, results, error } = videoAnalysis;
+  const fastModeAvailable = systemStatus?.corefakenet_available;
 
   useEffect(() => {
     if (pendingFile) {
@@ -46,7 +65,7 @@ export default function VideoAnalysis() {
   }, [file]);
 
   const handleFileSelect = useCallback((f) => setFile(f), []);
-  const handleAnalyze = () => { if (file) runVideoAnalysis(file, fps, aggregation); };
+  const handleAnalyze = () => { if (file) runVideoAnalysis(file, fps, aggregation, mode); };
   const handleCancelConfirm = useCallback(() => {
     const { cancelAnalysis } = useForensicStore.getState();
     cancelAnalysis('video');
@@ -66,6 +85,55 @@ export default function VideoAnalysis() {
         {/* Left panel */}
         <div className="lg:col-span-1 space-y-4">
           <UploadZone onFileSelect={handleFileSelect} accept="video/*" label="Drop video or click to browse" />
+
+          {/* Analysis mode */}
+          <div className="card">
+            <div className="flex items-center gap-2 mb-3">
+              <Zap size={13} className="text-text-3" />
+              <span className="label-tag">Analysis Mode</span>
+            </div>
+
+            <div className="space-y-2">
+              {MODES.map((opt) => {
+                const available = opt.value === MODES[0].value || fastModeAvailable;
+                const selected = mode === opt.value;
+
+                return (
+                  <label
+                    key={opt.value}
+                    className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all duration-200 ${
+                      !available ? 'opacity-40 cursor-not-allowed' : ''
+                    } ${selected ? 'bg-accent-dim border border-accent/30' : 'border border-border-dim bg-white/[0.02]'}`}
+                  >
+                    <span
+                      className={`flex-shrink-0 w-3.5 h-3.5 rounded-full transition-[border] duration-200 ${
+                        selected
+                          ? 'border-[4px] border-accent'
+                          : 'border-[1.5px] border-white/20'
+                      }`}
+                    />
+                    <input
+                      type="radio"
+                      name="video-analysis-mode"
+                      value={opt.value}
+                      checked={selected}
+                      onChange={(e) => available && setMode(e.target.value)}
+                      disabled={!available}
+                      className="sr-only"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold leading-none text-text-1">
+                        {opt.label}
+                      </p>
+                      <p className="text-xs mt-0.5 text-text-2">
+                        {opt.sub}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Parameters */}
           <div className="card">
@@ -127,6 +195,9 @@ export default function VideoAnalysis() {
               </button>
             )}
           </div>
+          {isAnalyzing && (
+            <IndeterminateProgress label="Extracting & scoring frames…" />
+          )}
         </div>
 
         {/* Right panel */}
@@ -195,10 +266,14 @@ export default function VideoAnalysis() {
           </div>
 
           {results?.frame_details && (
-            <div className="card">
-              <p className="label-tag mb-3">Frame Timeline</p>
-              <FrameTable framesRawStr={results.frame_details} />
-            </div>
+            <>
+              <VideoRiskTimeline framesRawStr={results.frame_details} />
+
+              <div className="card">
+                <p className="label-tag mb-3">Frame Detail</p>
+                <FrameTable framesRawStr={results.frame_details} />
+              </div>
+            </>
           )}
 
           {results?.explanation && (

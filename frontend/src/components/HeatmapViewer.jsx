@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { Eye, EyeOff } from 'lucide-react';
 
 export default function HeatmapViewer({ originalFile, gradcamBase64 }) {
@@ -25,7 +26,10 @@ export default function HeatmapViewer({ originalFile, gradcamBase64 }) {
   const originalUrl = blobUrlRef.current;
   const heatmapUrl = gradcamBase64 ? `data:image/png;base64,${gradcamBase64}` : null;
 
-  if (!originalFile && !gradcamBase64) {
+  // Only reveal once there's an actual analysis result to show — the raw
+  // uploaded file is already previewed inline in the UploadZone dropzone,
+  // so showing it again here (pre-analysis) was a duplicate.
+  if (!gradcamBase64) {
     return (
       <div className="w-full flex flex-col items-center justify-center rounded-xl min-h-[360px] bg-bg-inset border border-border-dim">
         <Eye size={22} className="mb-2 text-text-3" />
@@ -37,7 +41,12 @@ export default function HeatmapViewer({ originalFile, gradcamBase64 }) {
   }
 
   return (
-    <div className="relative w-full rounded-xl overflow-hidden bg-bg-inset border border-border-dim">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      className="relative w-full rounded-xl overflow-hidden bg-bg-inset border border-border-dim"
+    >
       {/* Toggle button */}
       {heatmapUrl && (
         <div className="absolute top-3 right-3 z-10">
@@ -46,7 +55,7 @@ export default function HeatmapViewer({ originalFile, gradcamBase64 }) {
             aria-label={showHeatmap ? 'Show original image' : 'Show GradCAM heatmap'}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium tracking-wide transition-all border ${
               showHeatmap
-                ? 'bg-[rgba(6,182,212,0.10)] border-[rgba(6,182,212,0.25)] text-accent-2'
+                ? 'bg-[rgba(56,189,248,0.10)] border-[rgba(56,189,248,0.25)] text-accent-2'
                 : 'bg-bg-elevated border-border-dim text-text-2'
             }`}
           >
@@ -64,6 +73,6 @@ export default function HeatmapViewer({ originalFile, gradcamBase64 }) {
           className="max-w-full max-h-[540px] object-contain rounded-lg transition-opacity duration-300"
         />
       </div>
-    </div>
+    </motion.div>
   );
 }

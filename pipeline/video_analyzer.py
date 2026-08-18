@@ -11,17 +11,13 @@ Modular architecture:
 """
 
 import cv2
-import os
-import tempfile
 import torch
 import numpy as np
 from PIL import Image
 from torchvision import transforms
 from collections import deque
 
-from pipeline.face_gate import face_present
-from core_models.frequency_cnn import FrequencyCNN, fft_to_tensor
-from core_models.fusion_mlp import FusionMLP
+from core_models.frequency_cnn import fft_to_tensor
 from core.pipeline import calibrate_score, forensic_score as _core_forensic_score
 
 
@@ -118,28 +114,18 @@ class FaceExtractor:
             (has_face, bbox, confidence)
             bbox is (x1, y1, x2, y2) in pixel coords or None.
         """
-        # Save to temp file for OpenCV DNN
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp_path = tmp.name
-            pil_img.save(tmp_path)
-
-        try:
-            has_face, bbox, conf = self._detect_with_bbox(tmp_path)
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+        img_bgr = cv2.cvtColor(np.array(pil_img.convert("RGB")), cv2.COLOR_RGB2BGR)
+        has_face, bbox, conf = self._detect_with_bbox(img_bgr)
 
         self._last_bbox = bbox
         self._last_confidence = conf
         return has_face, bbox, conf
 
-    def _detect_with_bbox(self, image_path, confidence_threshold=0.5):
-        """Run OpenCV DNN face detector and return bbox + confidence."""
-        from pipeline.face_gate import _ensure_model_files, _PROTOTXT, _CAFFEMODEL
-        _ensure_model_files()
+    def _detect_with_bbox(self, img, confidence_threshold=0.5):
+        """Run OpenCV DNN face detector (cached net) and return bbox + confidence."""
+        from pipeline.face_gate import get_face_net
 
-        net = cv2.dnn.readNetFromCaffe(_PROTOTXT, _CAFFEMODEL)
-        img = cv2.imread(image_path)
+        net = get_face_net()
         if img is None:
             return False, None, 0.0
 
@@ -719,14 +705,20 @@ class VideoAnalyzer:
         # models/video_lstm.pth hasn't been trained yet.
         self.video_lstm = video_lstm
 
-    def analyze(self, video_path, fps=6, aggregation="weighted_avg",
+    def analyze(self, video_path, fps=1, aggregation="weighted_avg",
                 progress_callback=None):
         """
         Full video analysis pipeline.
 
         Args:
             video_path: Path to video file.
-            fps: Frame sampling rate (default 6 fps — every ~5th frame at 30fps).
+            fps: Frame sampling rate (default 1 fps — every ~30th frame at 30fps.
+                 Lower than earlier defaults deliberately: each sampled frame
+                 runs 7 CPU models including two transformers (ViT, CLIP
+                 ViT-L/14), so frame count directly drives wall-clock time -
+                 see pipeline/face_gate.py's get_face_net() for the other
+                 half of the fix, which stopped reloading the face detector
+                 net from disk on every frame).
             aggregation: 'weighted_avg' (default), 'majority', 'average', or 'max'.
             progress_callback: Optional callable(current, total, message).
 

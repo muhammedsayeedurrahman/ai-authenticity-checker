@@ -4,33 +4,37 @@
 
 /* ─── Design Tokens ───────────────────────────────────────────────── */
 :root {
-  --bg-void:      #080A0F;
-  --bg-base:      #0C0F16;
-  --bg-card:      #141820;
-  --bg-elevated:  #1C2130;
-  --bg-inset:     #0A0C12;
+  /* Command-center palette */
+  --bg-void:      #090B11;
+  --bg-base:      #0E1118;
+  --bg-card:      #131822;
+  --bg-card-glass: rgba(19,24,34,0.92);
+  --bg-elevated:  #191E2A;
+  --bg-inset:     #0B0D13;
 
-  --border-dim:   rgba(255,255,255,0.07);
+  --border-dim:   rgba(255,255,255,0.06);
   --border-mid:   rgba(255,255,255,0.12);
   --border-glow:  rgba(59,130,246,0.25);
 
   --accent:       #3B82F6;
   --accent-dim:   rgba(59,130,246,0.12);
   --accent-glow:  rgba(59,130,246,0.18);
-  --accent-2:     #06B6D4;
-  --accent-2-glow: rgba(6,182,212,0.08);
-  --accent-gradient: linear-gradient(135deg, #3B82F6, #06B6D4);
+  --accent-2:     #38BDF8;
+  --accent-2-glow: rgba(56,189,248,0.08);
+  --accent-gradient: linear-gradient(135deg, #3B82F6, #38BDF8);
 
   /* FIXED: Bumped text colors for WCAG AA contrast on dark backgrounds */
-  --text-1:       #EDF0F7;
-  --text-2:       #9BA5B7;   /* was #8B95A5 — now 5.2:1 on #141820 */
+  --text-1:       #F5F7FA;
+  --text-2:       #8C95A6;   /* was #8B95A5 — now 5.2:1 on #141820 */
   --text-3:       #6B7585;   /* was #4A5264 — now 4.6:1 on #141820 */
 
-  --risk-clear:    #34D399;
-  --risk-caution:  #FBBF24;
+  --risk-clear:    #22C55E;
+  --risk-caution:  #FACC15;
   --risk-critical: #FB7185;
 
-  --radius:       10px;
+  /* Two-tier radius scale: generous on cards/panels, tighter on controls */
+  --radius:       12px;
+  --radius-lg:    20px;
 
   /* FIXED: Base font size bumped from 14px to 15px */
   font-size: 15px;
@@ -86,31 +90,53 @@
   }
 
   /* Scrollbar */
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 99px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(59,130,246,0.25); }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.10);
+    border-radius: 99px;
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(59,130,246,0.35);
+    box-shadow: 0 0 8px rgba(59,130,246,0.3);
+  }
 }
 
 /* ─── Components ──────────────────────────────────────────────────── */
 @layer components {
 
-  /* Card surface */
+  /* Card surface — light glass: mostly-opaque background + soft blur,
+     not full glassmorphism (data legibility comes first). */
   .card {
-    background: var(--bg-card);
+    background: var(--bg-card-glass);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border: 1px solid var(--border-dim);
     border-top: 1px solid rgba(255,255,255,0.06);
-    border-radius: var(--radius);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4),
-      inset 0 1px 0 rgba(255,255,255,0.02);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.45),
+      inset 0 1px 0 rgba(255,255,255,0.03);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
     padding: 16px;
   }
 
+  /* Base lift + scale on hover — every pointer type gets this. */
   .card-hover:hover {
+    transform: translateY(-4px) scale(1.01);
     border-color: rgba(59,130,246,0.20);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5),
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55),
       0 0 0 1px rgba(59,130,246,0.15);
+  }
+
+  /* Fine-pointer devices additionally get a subtle mouse-parallax tilt,
+     fed by --tilt-x/--tilt-y set once in Layout.jsx (rAF-throttled
+     pointermove) — not per-card JS. Capped at a few degrees so it stays a
+     "premium" nuance, never a distraction. */
+  @media (hover: hover) and (pointer: fine) {
+    .card-hover:hover {
+      transform: perspective(800px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateY(-4px) scale(1.01);
+    }
   }
 
   /* Inset panel */
@@ -118,6 +144,32 @@
     background: var(--bg-inset);
     border: 1px solid var(--border-dim);
     border-radius: var(--radius);
+  }
+
+  /* Shared button press-ripple: a CSS-only centered bloom on :active — not
+     click-position-accurate (that needs per-click JS), but reads as a
+     satisfying press pulse without any new JS. */
+  .btn-primary, .btn-ghost, .btn-danger {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-primary::after, .btn-ghost::after, .btn-danger::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, transparent 70%);
+    opacity: 0;
+    transform: scale(0.4);
+    transition: transform 0.5s ease, opacity 0.6s ease;
+    pointer-events: none;
+  }
+
+  .btn-primary:active::after, .btn-ghost:active::after, .btn-danger:active::after {
+    opacity: 1;
+    transform: scale(1.6);
+    transition: transform 0.15s ease, opacity 0.1s ease;
   }
 
   /* Primary button */
@@ -168,12 +220,13 @@
     background: transparent;
     border: 1px solid var(--border-dim);
     cursor: pointer;
-    transition: color 0.2s ease, border-color 0.2s ease;
+    transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
   .btn-ghost:hover {
     color: var(--text-1);
     border-color: var(--border-mid);
+    box-shadow: 0 0 12px rgba(59,130,246,0.08);
   }
 
   /* Danger ghost button */
@@ -190,11 +243,12 @@
     background: transparent;
     border: 1px solid rgba(251,113,133,0.20);
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: background 0.15s ease, box-shadow 0.2s ease;
   }
 
   .btn-danger:hover {
     background: rgba(251,113,133,0.08);
+    box-shadow: 0 0 12px rgba(251,113,133,0.15);
   }
 
   /* Input field */
@@ -221,7 +275,7 @@
   /* Select dropdown — dark-friendly option styling */
   select.field-input {
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239BA5B7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238C95A6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 12px center;
     padding-right: 32px;
@@ -239,24 +293,26 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 12px;
+    padding: 9px 12px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--text-2);
     text-decoration: none;
-    transition: color 0.15s ease, background 0.15s ease;
+    transition: color 0.15s ease, background 0.15s ease, box-shadow 0.2s ease;
     position: relative;
   }
 
   .nav-item:hover {
     color: var(--text-1);
     background: rgba(255,255,255,0.04);
+    box-shadow: 0 0 14px rgba(59,130,246,0.08);
   }
 
   .nav-item.active {
     color: var(--text-1);
     background: rgba(59,130,246,0.10);
+    box-shadow: 0 0 18px rgba(59,130,246,0.14), inset 0 0 0 1px rgba(59,130,246,0.15);
   }
 
   /* Section label */
@@ -276,6 +332,35 @@
     border-radius: 6px;
   }
 
+  /* Indeterminate "still working" bar — honest process indicator, makes
+     no claim about a specific percentage (the backend has no progress
+     signal for long-running analyses). */
+  .progress-indeterminate-track {
+    position: relative;
+    width: 100%;
+    height: 3px;
+    border-radius: 99px;
+    background: rgba(255,255,255,0.06);
+    overflow: hidden;
+  }
+
+  .progress-indeterminate-track::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -40%;
+    width: 40%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent);
+    animation: progress-indeterminate 1.4s ease-in-out infinite;
+  }
+
+  /* Multimodal fusion connector lines — active while analyzing */
+  .fusion-line-pulse {
+    animation: fusion-line-pulse 0.6s linear infinite;
+  }
+
   /* Divider */
   .divider {
     width: 100%;
@@ -287,8 +372,9 @@
   .glass-card {
     background: rgba(12,15,22,0.92);
     backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
     border: 1px solid rgba(59,130,246,0.12);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
   }
 
   /* Gradient text utility */
@@ -314,11 +400,50 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  /* Fade mask at the scroll edges of a horizontally-scrollable container */
+  .scroll-fade-x {
+    mask-image: linear-gradient(to right, transparent 0, black 20px, black calc(100% - 20px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 20px, black calc(100% - 20px), transparent 100%);
+  }
+
+  /* Ambient background: subtle drifting grid + slow-floating glow particles.
+     Animated via background-position / transform / opacity only — no blur
+     animation, no layout-triggering properties. */
+  .bg-grid {
+    position: absolute;
+    inset: -48px;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 48px 48px;
+    animation: grid-drift 80s linear infinite;
+  }
+
+  .bg-particle {
+    position: absolute;
+    border-radius: 50%;
+    animation-name: particle-float;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+  }
+
+  /* HUD-style corner brackets — viewfinder accent for scan/upload surfaces */
+  .hud-corner {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-style: solid;
+    border-width: 0;
+    border-color: var(--border-mid);
+    transition: border-color 0.2s ease;
+    pointer-events: none;
+  }
+
   /* Elevated card */
   .card-elevated {
     background: var(--bg-elevated);
     border: 1px solid var(--border-mid);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 16px rgba(0,0,0,0.4);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
     padding: 16px;
@@ -338,6 +463,25 @@
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+
+@keyframes grid-drift {
+  0%   { background-position: 0 0, 0 0; }
+  100% { background-position: 48px 48px, 48px 48px; }
+}
+
+@keyframes particle-float {
+  0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.5; }
+  50%      { transform: translate3d(var(--particle-drift-x, 10px), var(--particle-drift-y, -14px), 0); opacity: 0.15; }
+}
+
+@keyframes progress-indeterminate {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+
+@keyframes fusion-line-pulse {
+  to { stroke-dashoffset: -10; }
 }
 
 /* ─── Reduced Motion ──────────────────────────────────────────────── */

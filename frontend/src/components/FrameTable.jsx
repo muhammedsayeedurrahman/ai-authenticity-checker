@@ -1,5 +1,6 @@
 import React from 'react';
 import { getRiskColorRaw, getRiskGlow, normalizeScore } from '../utils/risk';
+import { parseFrameDetails } from '../utils/frameParser';
 
 const COLUMNS = [
   { key: 0, label: 'Frame', title: 'Frame number' },
@@ -18,19 +19,8 @@ const COLUMNS = [
 export default function FrameTable({ framesRawStr }) {
   if (!framesRawStr) return null;
 
-  const lines = framesRawStr.split('\n');
-  if (lines.length < 3) return <pre className="text-xs text-text-3">{framesRawStr}</pre>;
-
-  const rows = [];
-  for (let i = 2; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const cols = line.split(/\s+/);
-    if (cols.length >= 8) {
-      rows.push(cols);
-    }
-  }
+  const rows = parseFrameDetails(framesRawStr);
+  if (rows.length === 0) return <pre className="text-xs text-text-3">{framesRawStr}</pre>;
 
   return (
     <div className="w-full rounded-[10px] overflow-hidden">
@@ -80,10 +70,10 @@ export default function FrameTable({ framesRawStr }) {
       </div>
 
       {/* Desktop: scrollable table */}
-      <div className="hidden md:block table-scroll">
+      <div className="hidden md:block table-scroll scroll-fade-x">
         <table className="w-full text-left text-xs min-w-[700px]">
           <thead>
-            <tr className="bg-gradient-to-br from-[rgba(59,130,246,0.08)] to-[rgba(6,182,212,0.04)] border-b border-[rgba(59,130,246,0.10)]">
+            <tr className="bg-gradient-to-br from-[rgba(59,130,246,0.08)] to-[rgba(56,189,248,0.04)] border-b border-[rgba(59,130,246,0.10)]">
               {COLUMNS.map((col) => (
                 <th
                   key={col.key}

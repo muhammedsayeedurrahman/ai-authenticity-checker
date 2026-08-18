@@ -120,13 +120,12 @@ def detect_and_align_face(pil_image, expand_ratio=0.3):
     Returns:
         (face_crop, bbox) where bbox is (x1, y1, x2, y2) or (None, None).
     """
-    from pipeline.face_gate import _ensure_model_files, _PROTOTXT, _CAFFEMODEL
-    _ensure_model_files()
+    from pipeline.face_gate import get_face_net
 
     img = np.array(pil_image.convert("RGB"))
     h, w = img.shape[:2]
 
-    net = cv2.dnn.readNetFromCaffe(_PROTOTXT, _CAFFEMODEL)
+    net = get_face_net()
     blob = cv2.dnn.blobFromImage(
         cv2.resize(img, (300, 300)), 1.0, (300, 300),
         (104.0, 177.0, 123.0)

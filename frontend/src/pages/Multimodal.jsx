@@ -6,6 +6,8 @@ import UploadZone from '../components/UploadZone';
 import RiskGauge from '../components/RiskGauge';
 import ScoreBar from '../components/ScoreBar';
 import VerdictCard from '../components/VerdictCard';
+import FusionVisualizer from '../components/FusionVisualizer';
+import IndeterminateProgress from '../components/IndeterminateProgress';
 import useForensicStore from '../store/useForensicStore';
 
 export default function Multimodal() {
@@ -45,6 +47,8 @@ export default function Multimodal() {
         <UploadZone onFileSelect={setAudio} accept="audio/*" label="Audio (Optional)" />
       </div>
 
+      <FusionVisualizer image={image} video={video} audio={audio} isAnalyzing={isAnalyzing} />
+
       {/* Analyze button */}
       <div className="flex justify-center gap-2">
         <button
@@ -67,6 +71,12 @@ export default function Multimodal() {
           </button>
         )}
       </div>
+
+      {isAnalyzing && (
+        <div className="max-w-sm mx-auto">
+          <IndeterminateProgress label="Fusing modality signals…" />
+        </div>
+      )}
 
       {/* Error */}
       {error && (

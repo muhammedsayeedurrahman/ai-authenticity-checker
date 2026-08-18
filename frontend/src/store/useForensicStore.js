@@ -102,13 +102,13 @@ const useForensicStore = create((set) => ({
     }
   },
 
-  runVideoAnalysis: async (file, fps, aggregation) => {
+  runVideoAnalysis: async (file, fps, aggregation, mode = 'ensemble') => {
     abortControllers.get('video')?.abort();
     const controller = new AbortController();
     abortControllers.set('video', controller);
     set({ videoAnalysis: { isAnalyzing: true, results: null, error: null } });
     try {
-      const data = await forensicApi.analyzeVideo(file, fps, aggregation, { signal: controller.signal });
+      const data = await forensicApi.analyzeVideo(file, fps, aggregation, mode, { signal: controller.signal });
       if (data.success) {
         set({ videoAnalysis: { isAnalyzing: false, results: normalizeResults(data), error: null } });
         useToastStore.getState().addToast('Video analysis complete', 'success');
@@ -197,7 +197,7 @@ const useForensicStore = create((set) => ({
             (m) => m.toLowerCase().includes('fusion') || m.toLowerCase().includes('mlp'),
           ),
           vit_available: loaded.some((m) => m.toLowerCase().includes('vit')),
-          device: 'auto',
+          device: data.device || 'cpu',
           total: data.total || 0,
         },
         isStatusLoading: false,

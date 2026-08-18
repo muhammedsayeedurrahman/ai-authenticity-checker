@@ -78,6 +78,9 @@ class ImageAnalysisResult(ProofyxBase):
     media_type: str = "image"
     explanation: str = ""
     metadata: Optional[dict[str, Any]] = None
+    gradcam_image: Optional[str] = Field(
+        default=None, description="Bare base64 PNG (no data-URI prefix)",
+    )
 
 
 class ImageAnalysisResponse(BaseModel):
@@ -204,6 +207,7 @@ class ModelStatus(BaseModel):
     missing: list[str] = Field(default_factory=list)
     total: int = 0
     corefakenet_ready: bool = False
+    device: str = "cpu"
 
 
 class HealthResponse(BaseModel):

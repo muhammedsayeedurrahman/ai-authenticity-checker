@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import io
 from unittest.mock import patch
 
-import pytest
-from PIL import Image
 
 
 # ──────────────────────────────────────────────
@@ -200,7 +197,7 @@ class TestAPIKeyAuth:
         """When API keys are configured, missing header returns 401."""
         from core.secrets import KeyPool
         mock_pool = KeyPool("PROOFYX_API_KEY", ["test-key-123"])
-        with patch("api.routes.get_pool", return_value=mock_pool):
+        with patch("core.auth.get_pool", return_value=mock_pool):
             resp = client.post(
                 "/api/v1/analyze/image",
                 files={"file": ("test.jpg", dummy_image_bytes, "image/jpeg")},
@@ -211,7 +208,7 @@ class TestAPIKeyAuth:
         """When API keys are configured, wrong key returns 403."""
         from core.secrets import KeyPool
         mock_pool = KeyPool("PROOFYX_API_KEY", ["correct-key"])
-        with patch("api.routes.get_pool", return_value=mock_pool):
+        with patch("core.auth.get_pool", return_value=mock_pool):
             resp = client.post(
                 "/api/v1/analyze/image",
                 files={"file": ("test.jpg", dummy_image_bytes, "image/jpeg")},

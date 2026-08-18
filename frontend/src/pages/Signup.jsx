@@ -44,7 +44,7 @@ export default function Signup() {
         {success && (
           <div
             role="alert"
-            className="flex items-start gap-2.5 p-3 rounded-lg text-xs bg-risk-clearDim text-risk-clear border border-[rgba(52,211,153,0.22)]"
+            className="flex items-start gap-2.5 p-3 rounded-lg text-xs bg-risk-clearDim text-risk-clear border border-[rgba(34,197,94,0.22)]"
           >
             <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
             {success}
