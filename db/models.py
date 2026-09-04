@@ -46,10 +46,15 @@ class Analysis(Base):
     gradcam_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     report_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_id: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
+    # Nullable: every pre-tenancy row predates the org concept (see
+    # db/compliance_models.py::Organization). New rows get one once the
+    # caller is authenticated with org context.
+    org_id: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
 
     __table_args__ = (
         Index("idx_analyses_timestamp", "timestamp"),
         Index("idx_analyses_media_type", "media_type"),
         Index("idx_analyses_verdict", "verdict"),
         Index("idx_analyses_user_id", "user_id"),
+        Index("idx_analyses_org_id", "org_id"),
     )

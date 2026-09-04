@@ -105,3 +105,86 @@ export const forensicApi = {
     return response.data;
   },
 };
+
+// Compliance & traceability API (India IT Rules 2026 feature) — orgs,
+// org-scoped API keys, content labeling/SLA, audit trail, webhooks.
+// Requires Supabase auth (isAuthEnabled()) — org creation/listing is
+// JWT-only, matching the backend (see api/compliance_routes.py).
+export const complianceApi = {
+  listMyOrgs: async () => {
+    const response = await api.get('/api/v1/compliance/orgs/me');
+    return response.data;
+  },
+
+  createOrg: async (name, slug, contactEmail = '') => {
+    const response = await api.post('/api/v1/compliance/orgs', {
+      name, slug, contact_email: contactEmail,
+    });
+    return response.data;
+  },
+
+  listApiKeys: async (orgId) => {
+    const response = await api.get(`/api/v1/compliance/orgs/${orgId}/api-keys`);
+    return response.data;
+  },
+
+  createApiKey: async (orgId, label = '') => {
+    const response = await api.post(`/api/v1/compliance/orgs/${orgId}/api-keys`, { label });
+    return response.data;
+  },
+
+  revokeApiKey: async (orgId, keyId) => {
+    const response = await api.post(`/api/v1/compliance/orgs/${orgId}/api-keys/${keyId}/revoke`);
+    return response.data;
+  },
+
+  listSlaClocks: async (orgId, status = null) => {
+    const params = status ? `?status=${status}` : '';
+    const response = await api.get(`/api/v1/compliance/sla${params}`, {
+      headers: { 'X-Proofyx-Org-Id': orgId },
+    });
+    return response.data;
+  },
+
+  recordContentAction: async (orgId, labelId, action, notes = '') => {
+    const response = await api.post(
+      `/api/v1/compliance/content/${labelId}/action`,
+      { action, notes },
+      { headers: { 'X-Proofyx-Org-Id': orgId } },
+    );
+    return response.data;
+  },
+
+  getAuditLog: async (orgId, limit = 100) => {
+    const response = await api.get(`/api/v1/compliance/audit-log?limit=${limit}`, {
+      headers: { 'X-Proofyx-Org-Id': orgId },
+    });
+    return response.data;
+  },
+
+  listWebhooks: async (orgId) => {
+    const response = await api.get(`/api/v1/compliance/orgs/${orgId}/webhooks`);
+    return response.data;
+  },
+
+  createWebhook: async (orgId, url, eventTypes = []) => {
+    const response = await api.post(`/api/v1/compliance/orgs/${orgId}/webhooks`, {
+      url, event_types: eventTypes,
+    });
+    return response.data;
+  },
+
+  revokeWebhook: async (orgId, endpointId) => {
+    const response = await api.post(
+      `/api/v1/compliance/orgs/${orgId}/webhooks/${endpointId}/revoke`,
+    );
+    return response.data;
+  },
+
+  testWebhook: async (orgId, endpointId) => {
+    const response = await api.post(
+      `/api/v1/compliance/orgs/${orgId}/webhooks/${endpointId}/test`,
+    );
+    return response.data;
+  },
+};

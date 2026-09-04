@@ -7,6 +7,8 @@ import UploadZone from '../components/UploadZone';
 import RiskGauge from '../components/RiskGauge';
 import ScoreBar from '../components/ScoreBar';
 import VerdictCard from '../components/VerdictCard';
+import CybercrimeRiskAdvisory from '../components/CybercrimeRiskAdvisory';
+import ComplianceLabelBadge from '../components/ComplianceLabelBadge';
 import HeatmapViewer from '../components/HeatmapViewer';
 import IndeterminateProgress from '../components/IndeterminateProgress';
 
@@ -212,6 +214,8 @@ export default function ImageAnalysis() {
                 )}
 
                 <VerdictCard verdict={results.verdict} riskScore={results.risk_percent} />
+                <CybercrimeRiskAdvisory risk={results.cybercrime_risk} />
+                <ComplianceLabelBadge label={results.compliance_label} />
 
                 {results.explanation && (
                   <div className="p-3 rounded-lg bg-bg-inset border border-border-dim">

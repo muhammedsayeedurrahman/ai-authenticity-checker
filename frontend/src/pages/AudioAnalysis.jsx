@@ -5,6 +5,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import UploadZone from '../components/UploadZone';
 import RiskGauge from '../components/RiskGauge';
 import VerdictCard from '../components/VerdictCard';
+import CybercrimeRiskAdvisory from '../components/CybercrimeRiskAdvisory';
+import ComplianceLabelBadge from '../components/ComplianceLabelBadge';
 import AudioWaveform from '../components/AudioWaveform';
 import IndeterminateProgress from '../components/IndeterminateProgress';
 import useForensicStore from '../store/useForensicStore';
@@ -97,6 +99,8 @@ export default function AudioAnalysis() {
 
               <div className="w-full">
                 <VerdictCard verdict={results.verdict} riskScore={results.risk_percent} />
+                <CybercrimeRiskAdvisory risk={results.cybercrime_risk} />
+                <ComplianceLabelBadge label={results.compliance_label} />
               </div>
 
               {results.manipulation_type && (

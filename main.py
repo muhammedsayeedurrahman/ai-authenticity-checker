@@ -28,6 +28,7 @@ from slowapi.errors import RateLimitExceeded
 # Import config first -- triggers load_dotenv() before other modules read env vars
 import core.config  # noqa: F401
 
+from api.compliance_routes import router as compliance_router
 from api.routes import router as api_router, limiter
 from core.secrets import get_active_pools
 
@@ -52,8 +53,11 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database and eagerly load ML models at startup."""
+    import asyncio
+
     from db.database import init_db, close_db
     from core.pipeline import get_registry
+    from core.sla_monitor import MONITOR_ENABLED, poll_loop
 
     # Database
     logger.info("Initializing database...")
@@ -66,9 +70,19 @@ async def lifespan(app: FastAPI):
         "Model loading complete: %d loaded, %d missing",
         len(reg.loaded), len(reg.missing),
     )
+
+    # SLA monitor (compliance takedown-clock notifications) — gated so the
+    # test suite's TestClient lifespan (tests/conftest.py) doesn't leak a
+    # background task; PROOFYX_SLA_MONITOR_ENABLED=0 there.
+    sla_stop_event = asyncio.Event()
+    sla_task = asyncio.create_task(poll_loop(sla_stop_event)) if MONITOR_ENABLED else None
+
     yield
 
     # Cleanup
+    if sla_task is not None:
+        sla_stop_event.set()
+        await sla_task
     await close_db()
 
 
@@ -97,8 +111,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-API-Key", "Authorization", "Accept"],
+    allow_methods=["GET", "POST", "DELETE", "PATCH"],
+    allow_headers=[
+        "Content-Type", "X-API-Key", "Authorization", "Accept", "X-Proofyx-Org-Id",
+    ],
 )
 
 # ──────────────────────────────────────────────
@@ -136,6 +152,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # ──────────────────────────────────────────────
 
 app.include_router(api_router, prefix="/api/v1", tags=["Analysis"])
+app.include_router(compliance_router, prefix="/api/v1/compliance", tags=["Compliance"])
 
 # Static files (project-level assets: logo, etc.)
 assets_dir = os.path.join(ROOT_DIR, "assets")

@@ -35,7 +35,8 @@ from core.pipeline import (
     analyze_audio, analyze_image, analyze_multimodal,
     analyze_video, get_registry,
 )
-from core.auth import get_current_user
+from core.auth import get_principal
+from core.principal import Principal
 from db.history import AnalysisHistory
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,7 @@ async def _save_and_build_response(
     file_name: str,
     user_id: Optional[str],
     result_model: type,
+    org_id: Optional[str] = None,
 ) -> tuple[str, str, dict[str, Any]]:
     """Create a new record from pipeline output without mutating the original.
 
@@ -190,7 +192,7 @@ async def _save_and_build_response(
         "timestamp": timestamp,
         "file_name": file_name,
     }
-    await history.save(history_record, user_id=user_id)
+    await history.save(history_record, user_id=user_id, org_id=org_id)
 
     # Filter to only fields the response model accepts, stripping large blobs
     response_fields = {
@@ -212,6 +214,17 @@ async def _save_and_build_response(
     return analysis_id, timestamp, response_fields
 
 
+def _principal_ids(principal: Principal) -> tuple[Optional[str], Optional[str]]:
+    """Extract (user_id, org_id) from a resolved Principal.
+
+    user_id is only meaningful for JWT-authenticated callers, matching the
+    legacy get_current_user contract (API-key/anonymous callers have no
+    user identity, but may still carry org_id).
+    """
+    user_id = principal.user_id if principal.kind == "user" else None
+    return user_id, principal.org_id
+
+
 # ──────────────────────────────────────────────
 # Analysis Endpoints
 # ──────────────────────────────────────────────
@@ -222,7 +235,7 @@ async def api_analyze_image(
     request: Request,
     file: UploadFile = File(...),
     mode: str = Query("ensemble", pattern="^(ensemble|fast)$"),
-    current_user: Optional[dict] = Depends(get_current_user),
+    principal: Principal = Depends(get_principal),
 ):
     """Analyze an uploaded image for deepfake indicators."""
     contents = await _read_validated(file, MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXT)
@@ -237,9 +250,9 @@ async def api_analyze_image(
     if result.get("error"):
         return ImageAnalysisResponse(success=False, error=result["error"])
 
-    user_id = current_user["id"] if current_user else None
+    user_id, org_id = _principal_ids(principal)
     analysis_id, timestamp, fields = await _save_and_build_response(
-        result, file.filename or "", user_id, ImageAnalysisResult,
+        result, file.filename or "", user_id, ImageAnalysisResult, org_id=org_id,
     )
 
     return ImageAnalysisResponse(
@@ -256,7 +269,7 @@ async def api_analyze_video(
     fps: float = Query(1.0, ge=0.5, le=30),
     aggregation: str = Query("weighted_avg"),
     mode: str = Query("ensemble", pattern="^(ensemble|fast)$"),
-    current_user: Optional[dict] = Depends(get_current_user),
+    principal: Principal = Depends(get_principal),
 ):
     """Analyze an uploaded video for deepfake indicators."""
     contents = await _read_validated(file, MAX_VIDEO_SIZE, ALLOWED_VIDEO_EXT)
@@ -281,9 +294,9 @@ async def api_analyze_video(
     if result.get("error"):
         return VideoAnalysisResponse(success=False, error=result["error"])
 
-    user_id = current_user["id"] if current_user else None
+    user_id, org_id = _principal_ids(principal)
     analysis_id, timestamp, fields = await _save_and_build_response(
-        result, file.filename or "", user_id, VideoAnalysisResult,
+        result, file.filename or "", user_id, VideoAnalysisResult, org_id=org_id,
     )
 
     return VideoAnalysisResponse(
@@ -297,7 +310,7 @@ async def api_analyze_video(
 async def api_analyze_audio(
     request: Request,
     file: UploadFile = File(...),
-    current_user: Optional[dict] = Depends(get_current_user),
+    principal: Principal = Depends(get_principal),
 ):
     """Analyze an uploaded audio file for deepfake indicators."""
     contents = await _read_validated(file, MAX_AUDIO_SIZE, ALLOWED_AUDIO_EXT)
@@ -319,9 +332,9 @@ async def api_analyze_audio(
     if result.get("error"):
         return AudioAnalysisResponse(success=False, error=result["error"])
 
-    user_id = current_user["id"] if current_user else None
+    user_id, org_id = _principal_ids(principal)
     analysis_id, timestamp, fields = await _save_and_build_response(
-        result, file.filename or "", user_id, AudioAnalysisResult,
+        result, file.filename or "", user_id, AudioAnalysisResult, org_id=org_id,
     )
 
     return AudioAnalysisResponse(
@@ -337,7 +350,7 @@ async def api_analyze_multimodal(
     image: Optional[UploadFile] = File(None),
     video: Optional[UploadFile] = File(None),
     audio: Optional[UploadFile] = File(None),
-    current_user: Optional[dict] = Depends(get_current_user),
+    principal: Principal = Depends(get_principal),
 ):
     """Analyze multiple media types with cross-modal fusion."""
     image_pil = None
@@ -385,9 +398,9 @@ async def api_analyze_multimodal(
             file_name = upload.filename
             break
 
-    user_id = current_user["id"] if current_user else None
+    user_id, org_id = _principal_ids(principal)
     analysis_id, timestamp, fields = await _save_and_build_response(
-        result, file_name, user_id, MultimodalAnalysisResult,
+        result, file_name, user_id, MultimodalAnalysisResult, org_id=org_id,
     )
 
     return MultimodalAnalysisResponse(
@@ -404,27 +417,36 @@ async def api_analyze_multimodal(
 async def list_history(
     limit: int = Query(20, ge=1, le=100),
     media_type: Optional[str] = Query(None),
-    current_user: Optional[dict] = Depends(get_current_user),
+    principal: Principal = Depends(get_principal),
 ):
-    """List recent analyses, scoped to the authenticated user."""
-    user_id = current_user["id"] if current_user else None
-    rows = await history.get_recent(limit=limit, media_type=media_type, user_id=user_id)
+    """List recent analyses, scoped to the caller's organization when the
+    credential carries org context (org-scoped API key, or a JWT user with
+    org membership), else scoped to the authenticated user.
+
+    SECURITY: org-scoped API keys must never see another org's history —
+    see _principal_ids and db/history.py::get_recent's org_id-priority
+    scoping rule. Only a caller with neither org nor user identity (true
+    legacy/dev-mode) receives unscoped results.
+    """
+    user_id, org_id = _principal_ids(principal)
+    rows = await history.get_recent(limit=limit, media_type=media_type, user_id=user_id, org_id=org_id)
     entries = [
         HistoryEntry(**{k: v for k, v in row.items() if k in HistoryEntry.model_fields})
         for row in rows
     ]
-    total = await history.count(user_id=user_id)
+    total = await history.count(user_id=user_id, org_id=org_id)
     return HistoryListResponse(success=True, data=entries, total=total)
 
 
 @router.get("/history/{analysis_id}")
 async def get_analysis(
     analysis_id: str,
-    current_user: Optional[dict] = Depends(get_current_user),
+    principal: Principal = Depends(get_principal),
 ):
-    """Get a specific analysis result, scoped to the authenticated user."""
-    user_id = current_user["id"] if current_user else None
-    result = await history.get(analysis_id, user_id=user_id)
+    """Get a specific analysis result, scoped to the caller's organization
+    or user — see list_history's docstring for the scoping rule."""
+    user_id, org_id = _principal_ids(principal)
+    result = await history.get(analysis_id, user_id=user_id, org_id=org_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return {"success": True, "data": result}

@@ -5,6 +5,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import UploadZone from '../components/UploadZone';
 import RiskGauge from '../components/RiskGauge';
 import VerdictCard from '../components/VerdictCard';
+import CybercrimeRiskAdvisory from '../components/CybercrimeRiskAdvisory';
+import ComplianceLabelBadge from '../components/ComplianceLabelBadge';
 import FrameTable from '../components/FrameTable';
 import VideoRiskTimeline from '../components/VideoRiskTimeline';
 import IndeterminateProgress from '../components/IndeterminateProgress';
@@ -239,6 +241,8 @@ export default function VideoAnalysis() {
                   />
                   <div className="w-full mt-1">
                     <VerdictCard verdict={results.verdict} riskScore={results.risk_percent} />
+                    <CybercrimeRiskAdvisory risk={results.cybercrime_risk} />
+                    <ComplianceLabelBadge label={results.compliance_label} />
                   </div>
 
                   {results.total_frames_analyzed > 0 && (

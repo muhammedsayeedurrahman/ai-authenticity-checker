@@ -22,7 +22,12 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
+from core.compliance_label import build_compliance_label
 from core.config import get_config
+from core.cybercrime_risk import (
+    assess_audio_cybercrime_risk, assess_image_cybercrime_risk,
+    assess_video_cybercrime_risk,
+)
 from core.types import (
     Verdict, Confidence,
     RiskLevel, TemporalAnalysis,
@@ -637,6 +642,26 @@ def _analyze_image_ensemble(
     # Ensure all scores are native Python floats (not numpy/torch float32)
     scores = {k: float(v) for k, v in scores.items()}
 
+    # EXIF/AI-software forensics — not a trained model, but its absence of
+    # camera provenance is a strong corroborating signal for identity-fraud
+    # (see core/cybercrime_risk.py) even though it doesn't affect risk_score.
+    from core.metadata import extract_full_metadata
+    metadata = extract_full_metadata(image_pil)
+
+    cybercrime_risk = assess_image_cybercrime_risk(
+        risk_score=final_risk,
+        face_detected=has_face,
+        exif_suspicious=metadata.get("exif_suspicious", False),
+        exif_findings=metadata.get("exif_findings", []),
+    )
+    compliance_label = build_compliance_label(
+        risk_score=final_risk,
+        confidence=confidence.value,
+        detector_version=f"proofyx/{fusion_mode}",
+        label_basis=[model_agreement, *metadata.get("exif_findings", [])],
+        cybercrime_category=cybercrime_risk["category"],
+    )
+
     return _to_native({
         "risk_score": float(final_risk),
         "risk_percent": float(risk_pct),
@@ -655,6 +680,9 @@ def _analyze_image_ensemble(
         "processing_time_ms": elapsed_ms,
         "explanation": explanation,
         "media_type": "image",
+        "metadata": metadata,
+        "cybercrime_risk": cybercrime_risk,
+        "compliance_label": compliance_label,
     })
 
 
@@ -714,6 +742,23 @@ def _analyze_image_fast(
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
+    from core.metadata import extract_full_metadata
+    metadata = extract_full_metadata(image_pil)
+
+    cybercrime_risk = assess_image_cybercrime_risk(
+        risk_score=final_risk,
+        face_detected=has_face,
+        exif_suspicious=metadata.get("exif_suspicious", False),
+        exif_findings=metadata.get("exif_findings", []),
+    )
+    compliance_label = build_compliance_label(
+        risk_score=final_risk,
+        confidence=confidence_enum.value,
+        detector_version="proofyx/corefakenet",
+        label_basis=["CorefakeNet (5 heads, attention-fused)", *metadata.get("exif_findings", [])],
+        cybercrime_category=cybercrime_risk["category"],
+    )
+
     return _to_native({
         "risk_score": final_risk,
         "risk_percent": risk_pct,
@@ -731,6 +776,9 @@ def _analyze_image_fast(
         "processing_time_ms": elapsed_ms,
         "explanation": explanation,
         "media_type": "image",
+        "metadata": metadata,
+        "cybercrime_risk": cybercrime_risk,
+        "compliance_label": compliance_label,
         "corefakenet_details": {
             "attention_weights": result.get("attention_weights", {}),
             "temperature": float(result.get("temperature", 0.0)),
@@ -795,6 +843,24 @@ def _analyze_video_fast(
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
+    faces_detected_in_frames = result.get("faces_detected_in_frames", 0)
+    cybercrime_risk = assess_video_cybercrime_risk(
+        risk_score=risk_score,
+        faces_detected_in_frames=faces_detected_in_frames,
+        significant_jumps=significant_jumps,
+        score_variance=variance,
+    )
+    compliance_label = build_compliance_label(
+        risk_score=risk_score,
+        confidence=confidence_enum.value,
+        detector_version="proofyx/corefakenet_fast",
+        label_basis=[
+            f"CorefakeNet fast mode across {len(frame_results)} sampled frames",
+            *([f"{significant_jumps} abrupt score jump(s) between frames"] if significant_jumps else []),
+        ],
+        cybercrime_category=cybercrime_risk["category"],
+    )
+
     return {
         "risk_score": risk_score,
         "risk_percent": risk_pct,
@@ -805,7 +871,7 @@ def _analyze_video_fast(
         "total_frames_analyzed": result.get("total_frames_analyzed", 0),
         "fake_frames": result.get("fake_frames", 0),
         "real_frames": result.get("real_frames", 0),
-        "faces_detected_in_frames": result.get("faces_detected_in_frames", 0),
+        "faces_detected_in_frames": faces_detected_in_frames,
         "frame_results": frame_results,
         "model_scores": result.get("model_scores", {}),
         "temporal_analysis": {
@@ -819,6 +885,8 @@ def _analyze_video_fast(
         "fusion_mode": "corefakenet_fast",
         "processing_time_ms": elapsed_ms,
         "media_type": "video",
+        "cybercrime_risk": cybercrime_risk,
+        "compliance_label": compliance_label,
     }
 
 
@@ -960,6 +1028,25 @@ def analyze_video(
     )
     frame_details = _format_frame_details(frame_results)
 
+    faces_detected_in_frames = result.get("faces_detected_in_frames", 0)
+    cybercrime_risk = assess_video_cybercrime_risk(
+        risk_score=risk_score,
+        faces_detected_in_frames=faces_detected_in_frames,
+        significant_jumps=temporal_analysis.significant_jumps,
+        score_variance=temporal_analysis.score_variance,
+    )
+    compliance_label = build_compliance_label(
+        risk_score=risk_score,
+        confidence=confidence_enum.value,
+        detector_version=f"proofyx/ensemble_{result.get('aggregation_method', aggregation)}",
+        label_basis=[
+            f"Analyzed {total_frames} frames — {fake_frames} flagged as potentially manipulated",
+            *([f"{temporal_analysis.significant_jumps} abrupt score jump(s) between frames"]
+              if temporal_analysis.significant_jumps else []),
+        ],
+        cybercrime_category=cybercrime_risk["category"],
+    )
+
     # Convert all numpy/torch types to native Python before returning
     return _to_native({
         "risk_score": risk_score,
@@ -971,7 +1058,7 @@ def analyze_video(
         "total_frames_analyzed": total_frames,
         "fake_frames": fake_frames,
         "real_frames": real_frames,
-        "faces_detected_in_frames": result.get("faces_detected_in_frames", 0),
+        "faces_detected_in_frames": faces_detected_in_frames,
         "frame_results": frame_results,
         "frame_details": frame_details,
         "temporal_analysis": {
@@ -985,6 +1072,8 @@ def analyze_video(
         "processing_time_ms": elapsed_ms,
         "explanation": explanation,
         "media_type": "video",
+        "cybercrime_risk": cybercrime_risk,
+        "compliance_label": compliance_label,
     })
 
 
@@ -1026,13 +1115,27 @@ def analyze_audio(
     auth_score = float(result.get("authenticity_score", 100.0))
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
+    manipulation_type = result.get("manipulation_type", "")
+    evidence = result.get("evidence", [])
+    cybercrime_risk = assess_audio_cybercrime_risk(
+        risk_score=fake_prob, manipulation_type=manipulation_type, evidence=evidence,
+    )
+    confidence_value = result.get("confidence", "MEDIUM")
+    compliance_label = build_compliance_label(
+        risk_score=fake_prob,
+        confidence=confidence_value,
+        detector_version="proofyx/audio",
+        label_basis=[m for m in ([manipulation_type] + list(evidence)) if m],
+        cybercrime_category=cybercrime_risk["category"],
+    )
+
     return _to_native({
         "risk_score": fake_prob,
         "authenticity_score": auth_score,
         "verdict": Verdict.from_risk_score(fake_prob).value,
-        "confidence": result.get("confidence", "MEDIUM"),
-        "manipulation_type": result.get("manipulation_type", ""),
-        "evidence": result.get("evidence", []),
+        "confidence": confidence_value,
+        "manipulation_type": manipulation_type,
+        "evidence": evidence,
         "segment_results": result.get("segment_results", []),
         "suspicious_timestamps": result.get("timestamps", []),
         "duration_sec": result.get("duration_sec", 0.0),
@@ -1040,6 +1143,8 @@ def analyze_audio(
         "processing_time_ms": elapsed_ms,
         "media_type": "audio",
         "explanation": result.get("explanation", ""),
+        "cybercrime_risk": cybercrime_risk,
+        "compliance_label": compliance_label,
     })
 
 
@@ -1108,6 +1213,25 @@ def analyze_multimodal(
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
+        # Each modality already computed its own cybercrime_risk above —
+        # surface every non-"none" one rather than collapsing to a single
+        # category, since e.g. a cloned voice over a genuine video is its
+        # own distinct fraud signal from a face-swapped video.
+        cybercrime_risks = [
+            r["cybercrime_risk"] for r in active.values()
+            if r.get("cybercrime_risk", {}).get("category") != "none"
+        ]
+        compliance_label = build_compliance_label(
+            risk_score=final_score,
+            confidence=confidence_enum.value,
+            detector_version=f"proofyx/multimodal[{'+'.join(sorted(active.keys()))}]",
+            label_basis=[
+                f"Fused across modalities: {', '.join(sorted(active.keys()))}",
+                *[r["label"] for r in cybercrime_risks],
+            ],
+            cybercrime_category=cybercrime_risks[0]["category"] if cybercrime_risks else "none",
+        )
+
         return _to_native({
             "risk_score": final_score,
             "risk_percent": final_score * 100,
@@ -1119,6 +1243,8 @@ def analyze_multimodal(
             "explanation": explanation,
             "processing_time_ms": elapsed_ms,
             "media_type": "multimodal",
+            "cybercrime_risks": cybercrime_risks,
+            "compliance_label": compliance_label,
         })
     except Exception as e:
         logger.error("Multimodal analysis failed: %s", e, exc_info=True)
@@ -1154,4 +1280,7 @@ def _empty_result(media_type: str, start_time: float, error: str = "") -> dict[s
         "media_type": media_type,
         "processing_time_ms": (time.perf_counter() - start_time) * 1000,
         "error": error,
+        "compliance_label": build_compliance_label(
+            risk_score=0.0, confidence="", error=True,
+        ),
     }

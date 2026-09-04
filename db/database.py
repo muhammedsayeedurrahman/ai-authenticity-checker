@@ -78,6 +78,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     """Create all tables (used at app startup)."""
     from db.models import Base
+    import db.compliance_models  # noqa: F401 -- registers org/api-key tables on Base.metadata
 
     engine = get_engine()
     async with engine.begin() as conn:

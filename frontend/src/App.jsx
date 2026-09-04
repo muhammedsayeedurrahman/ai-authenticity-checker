@@ -18,6 +18,7 @@ const AudioAnalysis = lazy(() => import('./pages/AudioAnalysis'));
 const Multimodal = lazy(() => import('./pages/Multimodal'));
 const History = lazy(() => import('./pages/History'));
 const SystemStatus = lazy(() => import('./pages/SystemStatus'));
+const Compliance = lazy(() => import('./pages/Compliance'));
 
 function PageLoader() {
   return (
@@ -86,6 +87,7 @@ function App() {
             <Route path="audio" element={<Suspense fallback={<PageLoader />}><AudioAnalysis /></Suspense>} />
             <Route path="multimodal" element={<Suspense fallback={<PageLoader />}><Multimodal /></Suspense>} />
             <Route path="history" element={<Suspense fallback={<PageLoader />}><History /></Suspense>} />
+            <Route path="compliance" element={<Suspense fallback={<PageLoader />}><Compliance /></Suspense>} />
             <Route path="system" element={<Suspense fallback={<PageLoader />}><SystemStatus /></Suspense>} />
           </Route>
 

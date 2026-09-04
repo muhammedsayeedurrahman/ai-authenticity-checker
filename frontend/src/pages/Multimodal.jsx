@@ -6,6 +6,8 @@ import UploadZone from '../components/UploadZone';
 import RiskGauge from '../components/RiskGauge';
 import ScoreBar from '../components/ScoreBar';
 import VerdictCard from '../components/VerdictCard';
+import CybercrimeRiskAdvisory from '../components/CybercrimeRiskAdvisory';
+import ComplianceLabelBadge from '../components/ComplianceLabelBadge';
 import FusionVisualizer from '../components/FusionVisualizer';
 import IndeterminateProgress from '../components/IndeterminateProgress';
 import useForensicStore from '../store/useForensicStore';
@@ -103,6 +105,10 @@ export default function Multimodal() {
               />
               <div className="w-full">
                 <VerdictCard verdict={results.verdict} riskScore={results.risk_percent} />
+                {results.cybercrime_risks?.map((risk, i) => (
+                  <CybercrimeRiskAdvisory key={risk.category + i} risk={risk} />
+                ))}
+                <ComplianceLabelBadge label={results.compliance_label} />
               </div>
             </div>
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image, Film, Mic, Layers, LayoutDashboard, Clock, Activity, LogOut } from 'lucide-react';
+import { Image, Film, Mic, Layers, LayoutDashboard, Clock, Activity, LogOut, ShieldCheck } from 'lucide-react';
 import useForensicStore from '../store/useForensicStore';
 import useAuthStore from '../store/useAuthStore';
 import { isAuthEnabled } from '../services/supabase';
@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { to: '/audio',      icon: Mic,             label: 'Audio' },
   { to: '/multimodal', icon: Layers,          label: 'Multimodal' },
   { to: '/history',    icon: Clock,           label: 'History' },
+  { to: '/compliance', icon: ShieldCheck,     label: 'Compliance' },
 ];
 
 // Desktop rests as an icon-only rail and expands to full width on

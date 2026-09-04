@@ -56,6 +56,45 @@ class ExifResponse(BaseModel):
     findings: list[str] = Field(default_factory=list)
 
 
+class CybercrimeRiskResponse(BaseModel):
+    """Plain-language advisory for deepfake-enabled fraud patterns.
+
+    category == "none" (the default) means no fraud pattern was flagged;
+    label/description/advisory/signals are only populated otherwise.
+    See core/cybercrime_risk.py for the thresholds and category definitions.
+    """
+    category: str = "none"
+    label: str = ""
+    description: str = ""
+    advisory: str = ""
+    signals: list[str] = Field(default_factory=list)
+    disclaimer: str = ""
+
+
+class ComplianceLabelResponse(BaseModel):
+    """India IT Rules 2026 labeling/traceability determination for one analysis.
+
+    Heuristic compliance-workflow aid, not legal advice — see
+    core/compliance_label.py. Every field has a default so an absent
+    label (e.g. an older stored analysis) never fails validation.
+    """
+    label_code: str = "indeterminate"
+    label_display: str = ""
+    requires_visible_label: bool = False
+    requires_embedded_metadata: bool = False
+    label_basis: list[str] = Field(default_factory=list)
+    regulatory_basis: str = ""
+    ruleset_version: str = ""
+    detector_version: str = ""
+    risk_score: float = 0.0
+    confidence: str = ""
+    recommended_action: str = "none"
+    sla_applies: bool = False
+    sla_deadline_seconds: Optional[int] = None
+    assessed_at: str = ""
+    disclaimer: str = ""
+
+
 # ──────────────────────────────────────────────
 # Image Analysis
 # ──────────────────────────────────────────────
@@ -78,6 +117,8 @@ class ImageAnalysisResult(ProofyxBase):
     media_type: str = "image"
     explanation: str = ""
     metadata: Optional[dict[str, Any]] = None
+    cybercrime_risk: Optional[CybercrimeRiskResponse] = None
+    compliance_label: Optional[ComplianceLabelResponse] = None
     gradcam_image: Optional[str] = Field(
         default=None, description="Bare base64 PNG (no data-URI prefix)",
     )
@@ -116,6 +157,8 @@ class VideoAnalysisResult(ProofyxBase):
     video_info: dict[str, Any] = Field(default_factory=dict)
     processing_time_ms: float = 0.0
     media_type: str = "video"
+    cybercrime_risk: Optional[CybercrimeRiskResponse] = None
+    compliance_label: Optional[ComplianceLabelResponse] = None
 
 
 class VideoAnalysisResponse(BaseModel):
@@ -142,6 +185,8 @@ class AudioAnalysisResult(BaseModel):
     processing_time_ms: float = 0.0
     media_type: str = "audio"
     explanation: str = ""
+    cybercrime_risk: Optional[CybercrimeRiskResponse] = None
+    compliance_label: Optional[ComplianceLabelResponse] = None
 
 
 class AudioAnalysisResponse(BaseModel):
@@ -167,6 +212,8 @@ class MultimodalAnalysisResult(ProofyxBase):
     explanation: str = ""
     processing_time_ms: float = 0.0
     media_type: str = "multimodal"
+    cybercrime_risks: list[CybercrimeRiskResponse] = Field(default_factory=list)
+    compliance_label: Optional[ComplianceLabelResponse] = None
 
 
 class MultimodalAnalysisResponse(BaseModel):

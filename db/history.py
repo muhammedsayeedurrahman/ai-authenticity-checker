@@ -33,7 +33,9 @@ class AnalysisHistory:
     """Async SQLAlchemy-backed analysis history."""
 
     @staticmethod
-    def _result_to_model(result: dict[str, Any], user_id: Optional[str] = None) -> Analysis:
+    def _result_to_model(
+        result: dict[str, Any], user_id: Optional[str] = None, org_id: Optional[str] = None,
+    ) -> Analysis:
         """Convert a pipeline result dict to an Analysis ORM instance."""
         return Analysis(
             id=result.get("id", str(uuid.uuid4())),
@@ -56,6 +58,7 @@ class AnalysisHistory:
             metadata_json=json.dumps(result.get("metadata", {}), default=_json_default),
             explanation=result.get("explanation", ""),
             user_id=user_id,
+            org_id=org_id,
         )
 
     @staticmethod
@@ -82,6 +85,7 @@ class AnalysisHistory:
             "gradcam_path": row.gradcam_path,
             "report_path": row.report_path,
             "user_id": row.user_id,
+            "org_id": row.org_id,
         }
         # Parse JSON blobs
         for field, attr in (("model_scores", row.model_scores), ("metadata", row.metadata_json)):
@@ -94,21 +98,35 @@ class AnalysisHistory:
                 d[field] = {}
         return d
 
-    async def save(self, result: dict[str, Any], user_id: Optional[str] = None) -> str:
+    async def save(
+        self, result: dict[str, Any], user_id: Optional[str] = None, org_id: Optional[str] = None,
+    ) -> str:
         """Save analysis result. Returns the analysis ID."""
-        row = self._result_to_model(result, user_id=user_id)
+        row = self._result_to_model(result, user_id=user_id, org_id=org_id)
         factory = get_session_factory()
         async with factory() as session:
             await session.merge(row)
             await session.commit()
         return row.id
 
-    async def get(self, analysis_id: str, user_id: Optional[str] = None) -> Optional[dict[str, Any]]:
-        """Retrieve a single analysis by ID, optionally scoped to user."""
+    async def get(
+        self, analysis_id: str, user_id: Optional[str] = None, org_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Retrieve a single analysis by ID, scoped to org (preferred) or user.
+
+        SECURITY: org_id takes priority over user_id when both are absent-vs-
+        present — an org-scoped caller must never fall through to unscoped
+        access. Only a caller with neither (true legacy/dev-mode) sees
+        unfiltered results; see api/routes.py's history endpoints, which
+        never call this with both org_id and user_id None for an identified
+        caller.
+        """
         factory = get_session_factory()
         async with factory() as session:
             stmt = select(Analysis).where(Analysis.id == analysis_id)
-            if user_id is not None:
+            if org_id is not None:
+                stmt = stmt.where(Analysis.org_id == org_id)
+            elif user_id is not None:
                 stmt = stmt.where(Analysis.user_id == user_id)
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()
@@ -119,25 +137,32 @@ class AnalysisHistory:
         limit: int = 20,
         media_type: Optional[str] = None,
         user_id: Optional[str] = None,
+        org_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
-        """List recent analyses, optionally filtered by media type and user."""
+        """List recent analyses, filtered by media type and scoped to org
+        (preferred) or user — see get()'s docstring for the scoping rule."""
         factory = get_session_factory()
         async with factory() as session:
             stmt = select(Analysis).order_by(Analysis.timestamp.desc()).limit(limit)
             if media_type:
                 stmt = stmt.where(Analysis.media_type == media_type)
-            if user_id is not None:
+            if org_id is not None:
+                stmt = stmt.where(Analysis.org_id == org_id)
+            elif user_id is not None:
                 stmt = stmt.where(Analysis.user_id == user_id)
             result = await session.execute(stmt)
             rows = result.scalars().all()
             return [self._model_to_dict(r) for r in rows]
 
-    async def count(self, user_id: Optional[str] = None) -> int:
-        """Total number of analyses, optionally scoped to user."""
+    async def count(self, user_id: Optional[str] = None, org_id: Optional[str] = None) -> int:
+        """Total number of analyses, scoped to org (preferred) or user —
+        see get()'s docstring for the scoping rule."""
         factory = get_session_factory()
         async with factory() as session:
             stmt = select(func.count()).select_from(Analysis)
-            if user_id is not None:
+            if org_id is not None:
+                stmt = stmt.where(Analysis.org_id == org_id)
+            elif user_id is not None:
                 stmt = stmt.where(Analysis.user_id == user_id)
             result = await session.execute(stmt)
             return result.scalar_one()
@@ -163,7 +188,13 @@ class AnalysisHistory:
             await session.commit()
 
     async def delete(self, analysis_id: str) -> bool:
-        """Delete an analysis by ID. Returns True if deleted."""
+        """Delete an analysis by ID. Returns True if deleted.
+
+        WARNING: this is a hard row delete. Never call it on an analysis
+        that a compliance content_labels row references (see
+        db/compliance_repo.py) — deleting it would orphan a
+        regulator-facing audit record. No compliance code path calls this.
+        """
         factory = get_session_factory()
         async with factory() as session:
             stmt = sa_delete(Analysis).where(Analysis.id == analysis_id)

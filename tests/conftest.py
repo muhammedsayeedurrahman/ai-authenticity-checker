@@ -14,6 +14,10 @@ from sqlalchemy.pool import StaticPool
 
 # Force SQLite for tests
 os.environ.setdefault("DATABASE_URL", "")
+# Prevent the compliance SLA background monitor from starting during the
+# TestClient lifespan (see main.py::lifespan) — it would otherwise leak a
+# task across every API test in the suite.
+os.environ.setdefault("PROOFYX_SLA_MONITOR_ENABLED", "0")
 
 
 @pytest.fixture()
