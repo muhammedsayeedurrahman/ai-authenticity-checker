@@ -56,6 +56,7 @@ const useForensicStore = create((set) => ({
     vit_available: false,
     device: 'cpu',
     total: 0,
+    reverse_search_available: false,
   },
   isStatusLoading: true,
   statusError: null,
@@ -70,6 +71,7 @@ const useForensicStore = create((set) => ({
   imageAnalysis: createAnalysisSlice(),
   videoAnalysis: createAnalysisSlice(),
   audioAnalysis: createAnalysisSlice(),
+  documentAnalysis: createAnalysisSlice(),
   multimodalAnalysis: createAnalysisSlice(),
 
   // Pending file from drag-drop on Dashboard
@@ -79,13 +81,13 @@ const useForensicStore = create((set) => ({
 
   // --- Analysis Actions ---
 
-  runImageAnalysis: async (file, mode) => {
+  runImageAnalysis: async (file, mode, reverseSearch = false) => {
     abortControllers.get('image')?.abort();
     const controller = new AbortController();
     abortControllers.set('image', controller);
     set({ imageAnalysis: { isAnalyzing: true, results: null, error: null } });
     try {
-      const data = await forensicApi.analyzeImage(file, mode, { signal: controller.signal });
+      const data = await forensicApi.analyzeImage(file, mode, reverseSearch, { signal: controller.signal });
       if (data.success) {
         set({ imageAnalysis: { isAnalyzing: false, results: normalizeResults(data), error: null } });
         useToastStore.getState().addToast('Image analysis complete', 'success');
@@ -148,6 +150,29 @@ const useForensicStore = create((set) => ({
     }
   },
 
+  runDocumentAnalysis: async (file, idType = '', idNumber = '', reverseSearch = false) => {
+    abortControllers.get('document')?.abort();
+    const controller = new AbortController();
+    abortControllers.set('document', controller);
+    set({ documentAnalysis: { isAnalyzing: true, results: null, error: null } });
+    try {
+      const data = await forensicApi.analyzeDocument(file, idType, idNumber, reverseSearch, { signal: controller.signal });
+      if (data.success) {
+        set({ documentAnalysis: { isAnalyzing: false, results: normalizeResults(data), error: null } });
+        useToastStore.getState().addToast('Document analysis complete', 'success');
+      } else {
+        set({ documentAnalysis: { isAnalyzing: false, results: null, error: data.error || 'Analysis failed' } });
+        useToastStore.getState().addToast(data.error || 'Document analysis failed', 'error');
+      }
+    } catch (err) {
+      if (axios.isCancel(err) || err.name === 'AbortError' || err.name === 'CanceledError') return;
+      set({ documentAnalysis: { isAnalyzing: false, results: null, error: extractError(err) } });
+      useToastStore.getState().addToast(extractError(err), 'error');
+    } finally {
+      abortControllers.delete('document');
+    }
+  },
+
   runMultimodalAnalysis: async (image, video, audio) => {
     abortControllers.get('multimodal')?.abort();
     const controller = new AbortController();
@@ -199,6 +224,7 @@ const useForensicStore = create((set) => ({
           vit_available: loaded.some((m) => m.toLowerCase().includes('vit')),
           device: data.device || 'cpu',
           total: data.total || 0,
+          reverse_search_available: data.reverse_search_available || false,
         },
         isStatusLoading: false,
       });

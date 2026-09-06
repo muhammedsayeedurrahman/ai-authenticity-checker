@@ -107,9 +107,15 @@ if not _cors_origins:
         "http://localhost:5173", "http://127.0.0.1:5173",
     ]
 
+# Support wildcard *.vercel.app for preview deployments
+# Set CORS_ORIGINS_REGEX env var to add regex-based origin patterns, e.g.:
+#   CORS_ORIGINS_REGEX=https://.*\.vercel\.app
+_cors_regex = os.environ.get("CORS_ORIGINS_REGEX", "")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_origin_regex=_cors_regex or None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "PATCH"],
     allow_headers=[

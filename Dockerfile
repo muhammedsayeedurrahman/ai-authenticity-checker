@@ -23,7 +23,10 @@ FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# System dependencies for OpenCV, audio processing, health check
+# System dependencies for OpenCV, audio processing, health check.
+# libgl1-mesa-glx was a transitional package removed in Debian 13
+# ("trixie", the current python:3.11-slim base) - libgl1 is the actual
+# OpenGL runtime library OpenCV needs (libGL.so.1) on the current base.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -35,9 +38,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (deploy subset - excludes training-only
+# packages, one of which has no arm64 Linux wheel; see the file's own
+# header comment)
+COPY requirements-deploy.txt .
+RUN pip install --no-cache-dir -r requirements-deploy.txt
 
 # Copy backend source
 COPY main.py .
@@ -46,6 +51,7 @@ COPY core/ core/
 COPY core_models/ core_models/
 COPY pipeline/ pipeline/
 COPY db/ db/
+COPY utils/ utils/
 COPY configs/ configs/
 COPY alembic/ alembic/
 COPY alembic.ini .

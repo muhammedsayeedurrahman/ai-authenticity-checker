@@ -60,3 +60,5 @@ dummy.mp4
 
 # Manual test examples (may include personal photos, kept local only)
 test_examples/
+.vercel
+.env*.local

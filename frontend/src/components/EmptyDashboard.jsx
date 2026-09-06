@@ -1,13 +1,15 @@
 import React, { useRef, useCallback } from 'react';
-import { Shield, Upload, Cpu, CheckCircle, ArrowRight } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Shield, Upload, Cpu, CheckCircle, ArrowRight, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { staggerFadeUp } from '../utils/animations';
 import { detectMediaRoute } from '../utils/format';
 import useForensicStore from '../store/useForensicStore';
 
 const STEPS = [
-  { icon: Upload, title: 'Upload Media', desc: 'Image, video, or audio file' },
-  { icon: Cpu, title: 'AI Analysis', desc: 'Multi-model forensic ensemble' },
-  { icon: CheckCircle, title: 'Get Verdict', desc: 'Risk score & detailed report' },
+  { icon: Upload, title: '1. Select Media', desc: 'Drop image, voice recording, or video clip' },
+  { icon: Cpu, title: '2. Multi-Model AI Scan', desc: '7 neural networks verify frequencies & pixels' },
+  { icon: CheckCircle, title: '3. Instant Intelligence', desc: 'Risk dial, GradCAM heatmap & report' },
 ];
 
 export default function EmptyDashboard() {
@@ -23,41 +25,43 @@ export default function EmptyDashboard() {
   }, [navigate, setPendingFile]);
 
   return (
-    <div className="flex flex-col items-center justify-center py-12 px-4">
-      {/* Shield icon */}
-      <div className="mb-6">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-accent-dim border border-accent/20">
-          <Shield size={30} className="text-accent" />
+    <motion.div initial="hidden" animate="visible" className="flex flex-col items-center justify-center py-10 px-4">
+      {/* 3D-styled Robot Orb */}
+      <motion.div variants={staggerFadeUp} custom={0} className="mb-5">
+        <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-purple-700 via-indigo-600 to-pink-500 p-1 shadow-2xl shadow-purple-500/25 flex items-center justify-center">
+          <div className="w-full h-full rounded-full bg-[#1E1238] flex items-center justify-center relative">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-pink-400 shadow-[0_0_10px_#F472B6] animate-pulse" />
+              <div className="w-3 h-3 rounded-full bg-cyan-400 shadow-[0_0_10px_#38BDF8] animate-pulse" />
+            </div>
+          </div>
         </div>
-      </div>
+      </motion.div>
 
-      <h2 className="font-display text-2xl font-bold gradient-text mb-1">
-        System Ready
-      </h2>
-      <p className="text-sm mb-8 text-text-3">
-        No scans yet. Start your first forensic analysis in three steps.
-      </p>
+      <motion.h2 variants={staggerFadeUp} custom={1} className="font-display text-3xl font-black text-[#1E1238] tracking-tight mb-2 text-center">
+        Forensic Command Station Active
+      </motion.h2>
+      <motion.p variants={staggerFadeUp} custom={2} className="text-sm text-[#5B4E75] font-medium max-w-md text-center mb-8 leading-relaxed">
+        Verify digital images, cloned voices, and deepfake videos with multi-spectral neural networks.
+      </motion.p>
 
       {/* Step cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-xl mb-8">
-        {STEPS.map((step, i) => {
+      <motion.div variants={staggerFadeUp} custom={3} className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-3xl mb-8">
+        {STEPS.map((step) => {
           const Icon = step.icon;
           return (
-            <div key={step.title} className="card p-5 flex flex-col items-center text-center">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-accent-dim text-accent border border-accent/20">
-                  {i + 1}
-                </span>
-                <Icon size={15} className="text-accent" />
+            <div key={step.title} className="card p-5 flex flex-col items-center text-center space-y-2">
+              <div className="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-700 border border-purple-200 shadow-sm">
+                <Icon size={18} />
               </div>
-              <p className="text-sm font-semibold text-text-1">{step.title}</p>
-              <p className="text-xs mt-0.5 text-text-3">{step.desc}</p>
+              <p className="text-sm font-bold text-[#1E1238]">{step.title}</p>
+              <p className="text-xs text-[#5B4E75] leading-relaxed">{step.desc}</p>
             </div>
           );
         })}
-      </div>
+      </motion.div>
 
-      <div>
+      <motion.div variants={staggerFadeUp} custom={4}>
         <input
           ref={fileInputRef}
           type="file"
@@ -68,12 +72,13 @@ export default function EmptyDashboard() {
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="btn-primary px-8 py-3"
+          className="btn-primary px-8 py-3.5 text-sm font-bold shadow-lg shadow-purple-900/20"
         >
-          Start Your First Scan
-          <ArrowRight size={15} />
+          <Sparkles size={16} />
+          Start First Forensic Scan
+          <ArrowRight size={16} />
         </button>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

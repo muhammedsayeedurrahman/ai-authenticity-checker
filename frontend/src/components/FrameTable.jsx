@@ -1,5 +1,5 @@
 import React from 'react';
-import { getRiskColorRaw, getRiskGlow, normalizeScore } from '../utils/risk';
+import { getRiskColorRaw, normalizeScore } from '../utils/risk';
 import { parseFrameDetails } from '../utils/frameParser';
 
 const COLUMNS = [
@@ -20,23 +20,20 @@ export default function FrameTable({ framesRawStr }) {
   if (!framesRawStr) return null;
 
   const rows = parseFrameDetails(framesRawStr);
-  if (rows.length === 0) return <pre className="text-xs text-text-3">{framesRawStr}</pre>;
+  if (rows.length === 0) return <pre className="text-xs text-[#8F81A8]">{framesRawStr}</pre>;
 
   return (
-    <div className="w-full rounded-[10px] overflow-hidden">
+    <div className="w-full rounded-2xl overflow-hidden border border-purple-100 bg-white shadow-sm">
       {/* Mobile: card layout */}
-      <div className="md:hidden space-y-2">
+      <div className="md:hidden space-y-2 p-2">
         {rows.map((row, idx) => (
-          <div
-            key={idx}
-            className="inset-panel p-3"
-          >
+          <div key={idx} className="p-3 rounded-xl bg-purple-50/60 border border-purple-100">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono text-text-1">
+              <span className="text-xs font-mono font-bold text-[#1E1238]">
                 Frame {row[0]}
               </span>
               <span
-                className="text-xs font-mono font-bold px-2 py-0.5 rounded"
+                className="text-xs font-mono font-bold px-2 py-0.5 rounded-full"
                 style={{
                   color: getRiskColorRaw(normalizeScore(row[2])),
                   background: `${getRiskColorRaw(normalizeScore(row[2]))}18`,
@@ -46,64 +43,44 @@ export default function FrameTable({ framesRawStr }) {
               </span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-              <span className="text-text-3">Time</span>
-              <span className="font-mono text-text-2">{row[1]}</span>
-              <span className="text-text-3">Prediction</span>
-              <span className="text-text-2">{row[3]}</span>
-              <span className="text-text-3">Face</span>
-              <span className="text-text-2">{row[4]}</span>
-              {row[5] && (
-                <>
-                  <span className="text-text-3">ViT</span>
-                  <span className="font-mono text-text-2">{row[5]}</span>
-                </>
-              )}
-              {row[6] && (
-                <>
-                  <span className="text-text-3">Freq</span>
-                  <span className="font-mono text-text-2">{row[6]}</span>
-                </>
-              )}
+              <span className="text-[#8F81A8]">Time</span>
+              <span className="font-mono text-[#1E1238] font-semibold">{row[1]}</span>
+              <span className="text-[#8F81A8]">Prediction</span>
+              <span className="text-[#1E1238] font-semibold">{row[3]}</span>
+              <span className="text-[#8F81A8]">Face</span>
+              <span className="text-[#1E1238] font-semibold">{row[4]}</span>
             </div>
           </div>
         ))}
       </div>
 
       {/* Desktop: scrollable table */}
-      <div className="hidden md:block table-scroll scroll-fade-x">
+      <div className="hidden md:block table-scroll">
         <table className="w-full text-left text-xs min-w-[700px]">
           <thead>
-            <tr className="bg-gradient-to-br from-[rgba(59,130,246,0.08)] to-[rgba(56,189,248,0.04)] border-b border-[rgba(59,130,246,0.10)]">
+            <tr className="bg-purple-100/60 border-b border-purple-200/70">
               {COLUMNS.map((col) => (
                 <th
                   key={col.key}
                   title={col.title}
-                  className={`px-3 py-2.5 text-[11px] uppercase tracking-wide whitespace-nowrap text-text-3 ${col.center ? 'text-center' : ''}`}
+                  className={`px-3.5 py-3 text-[11px] font-bold uppercase tracking-wider text-purple-900 ${col.center ? 'text-center' : ''}`}
                 >
-                  <span className="cursor-help border-b border-dotted border-current">
-                    {col.label}
-                  </span>
+                  {col.label}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-purple-100/70">
             {rows.map((row, idx) => (
-              <tr
-                key={idx}
-                className="table-row-hover border-b border-white/[0.04]"
-              >
+              <tr key={idx} className="hover:bg-purple-50/60 transition-colors">
                 {COLUMNS.map((col) => {
                   const value = row[col.key];
                   if (col.isRisk) {
                     return (
                       <td
                         key={col.key}
-                        className="px-3 py-2 font-mono font-bold"
-                        style={{
-                          color: getRiskColorRaw(normalizeScore(value)),
-                          textShadow: normalizeScore(value) > 40 ? `0 0 6px ${getRiskGlow(normalizeScore(value))}` : 'none',
-                        }}
+                        className="px-3.5 py-2.5 font-mono font-black"
+                        style={{ color: getRiskColorRaw(normalizeScore(value)) }}
                       >
                         {value}
                       </td>
@@ -112,7 +89,7 @@ export default function FrameTable({ framesRawStr }) {
                   return (
                     <td
                       key={col.key}
-                      className={`px-3 py-2 font-mono ${col.center ? 'text-center' : ''} ${col.key === 0 ? 'text-text-1' : 'text-text-2'}`}
+                      className={`px-3.5 py-2.5 font-mono ${col.center ? 'text-center' : ''} ${col.key === 0 ? 'text-[#1E1238] font-bold' : 'text-[#5B4E75]'}`}
                     >
                       {value}
                     </td>

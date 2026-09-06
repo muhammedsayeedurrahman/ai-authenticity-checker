@@ -1,13 +1,13 @@
 """
 FastAPI REST API endpoints for ProofyX.
 
-All endpoints share the same core pipeline as the Gradio UI.
 Responses follow the envelope pattern: {success, data, error}.
 """
 
 import asyncio
 import base64
 import io
+import json
 import logging
 import os
 import tempfile
@@ -16,14 +16,16 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from fastapi import (
-    APIRouter, Depends, File, HTTPException, Query, Request, UploadFile,
+    APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile,
 )
+from fastapi.responses import Response
 from PIL import Image
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from api.schemas import (
     AudioAnalysisResponse, AudioAnalysisResult,
+    DocumentAnalysisResponse, DocumentAnalysisResult,
     HealthResponse,
     HistoryEntry, HistoryListResponse,
     ImageAnalysisResponse, ImageAnalysisResult,
@@ -32,7 +34,7 @@ from api.schemas import (
     VideoAnalysisResponse, VideoAnalysisResult,
 )
 from core.pipeline import (
-    analyze_audio, analyze_image, analyze_multimodal,
+    analyze_audio, analyze_document, analyze_image, analyze_multimodal,
     analyze_video, get_registry,
 )
 from core.auth import get_principal
@@ -66,7 +68,7 @@ ALLOWED_AUDIO_EXT = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
 TIMEOUT_IMAGE = int(os.environ.get("PROOFYX_TIMEOUT_IMAGE", "60"))
 TIMEOUT_VIDEO = int(os.environ.get("PROOFYX_TIMEOUT_VIDEO", "600"))
 TIMEOUT_AUDIO = int(os.environ.get("PROOFYX_TIMEOUT_AUDIO", "90"))
-TIMEOUT_MULTIMODAL = int(os.environ.get("PROOFYX_TIMEOUT_MULTIMODAL", "300"))
+TIMEOUT_MULTIMODAL = int(os.environ.get("PROOFYX_TIMEOUT_MULTIMODAL", "600"))
 
 # Magic bytes for image format validation
 MAGIC_BYTES: dict[str, list[bytes]] = {
@@ -171,6 +173,28 @@ async def _run_with_timeout(
         _inference_semaphore.release()
 
 
+async def _maybe_reverse_search(
+    requested: bool, contents: bytes, filename: str,
+) -> Optional[dict[str, Any]]:
+    """Run reverse-image-search corroboration if the client opted in for
+    this request. Not part of _run_with_timeout's GPU semaphore - this is
+    an outbound network call to a third-party provider, unrelated to
+    local inference concurrency, so it gets its own short timeout."""
+    if not requested:
+        return None
+
+    from core_models.reverse_search import reverse_image_search
+
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(reverse_image_search, contents, filename),
+            timeout=20,
+        )
+    except asyncio.TimeoutError:
+        return {"available": True, "provider": "bing_visual_search", "matches": [],
+                "match_count": 0, "error": "timed out"}
+
+
 async def _save_and_build_response(
     pipeline_result: dict[str, Any],
     file_name: str,
@@ -235,6 +259,7 @@ async def api_analyze_image(
     request: Request,
     file: UploadFile = File(...),
     mode: str = Query("ensemble", pattern="^(ensemble|fast)$"),
+    reverse_search: bool = Query(False, description="Opt-in: cross-reference this image against the public web via Bing Visual Search (sends the image to a third-party provider)"),
     principal: Principal = Depends(get_principal),
 ):
     """Analyze an uploaded image for deepfake indicators."""
@@ -250,6 +275,10 @@ async def api_analyze_image(
     if result.get("error"):
         return ImageAnalysisResponse(success=False, error=result["error"])
 
+    result["reverse_search"] = await _maybe_reverse_search(
+        reverse_search, contents, file.filename or "image.jpg",
+    )
+
     user_id, org_id = _principal_ids(principal)
     analysis_id, timestamp, fields = await _save_and_build_response(
         result, file.filename or "", user_id, ImageAnalysisResult, org_id=org_id,
@@ -258,6 +287,140 @@ async def api_analyze_image(
     return ImageAnalysisResponse(
         success=True,
         data=ImageAnalysisResult(id=analysis_id, timestamp=timestamp, **fields),
+    )
+
+
+@router.post("/analyze/document", response_model=DocumentAnalysisResponse)
+@limiter.limit("30/minute")
+async def api_analyze_document(
+    request: Request,
+    file: UploadFile = File(...),
+    id_type: Optional[str] = Form(None, pattern="^(aadhaar|pan|voter_id|other)?$"),
+    id_number: Optional[str] = Form(None),
+    reverse_search: bool = Query(False, description="Opt-in: cross-reference this document against the public web via Bing Visual Search (sends the image to a third-party provider)"),
+    principal: Principal = Depends(get_principal),
+):
+    """Analyze an uploaded document/ID/receipt/certificate image for AI
+    generation or digital tampering. Image formats only in this version -
+    PDFs would need a rasterization step (pdf2image/poppler) not yet
+    wired in.
+
+    id_type/id_number are optional: when both are provided, the number
+    printed on the document (typed by the user, not OCR'd) is checked
+    against the selected ID type's format/checksum - see
+    core_models/id_validators.py. Neither field is required; omitting
+    them just skips that one signal."""
+    contents = await _read_validated(file, MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXT)
+
+    try:
+        image = Image.open(io.BytesIO(contents)).convert("RGB")
+    except (OSError, ValueError, Image.DecompressionBombError):
+        raise HTTPException(status_code=400, detail="Invalid image file")
+
+    suffix = ".jpg"
+    if file.filename:
+        suffix = "." + file.filename.rsplit(".", 1)[-1]
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+
+        result = await _run_with_timeout(
+            analyze_document, TIMEOUT_IMAGE, image,
+            file_path=tmp_path, id_type=id_type, id_number=id_number,
+        )
+    finally:
+        _safe_tmp_remove(tmp_path)
+
+    if result.get("error"):
+        return DocumentAnalysisResponse(success=False, error=result["error"])
+
+    result["reverse_search"] = await _maybe_reverse_search(
+        reverse_search, contents, file.filename or "document.jpg",
+    )
+
+    user_id, org_id = _principal_ids(principal)
+    analysis_id, timestamp, fields = await _save_and_build_response(
+        result, file.filename or "", user_id, DocumentAnalysisResult, org_id=org_id,
+    )
+
+    return DocumentAnalysisResponse(
+        success=True,
+        data=DocumentAnalysisResult(id=analysis_id, timestamp=timestamp, **fields),
+    )
+
+
+_ID_PROOF_MAX_BYTES = 5 * 1024 * 1024  # matches the real portal's own 5MB cap
+_ID_PROOF_MIME_TYPES = {"image/jpeg", "image/png"}
+
+
+@router.post("/complaint/generate")
+@limiter.limit("10/minute")
+async def api_generate_complaint(
+    request: Request,
+    analysis: str = Form(...),
+    file_name: str = Form(""),
+    name: str = Form(...),
+    phone: str = Form(""),
+    email: str = Form(""),
+    address: str = Form(""),
+    incident_description: str = Form(""),
+    id_proof: Optional[UploadFile] = File(None),
+    principal: Principal = Depends(get_principal),
+):
+    """Generate a cyber crime complaint document from an analysis result
+    already held by the client, for the user to review and file
+    themselves. Never submits anything on the user's behalf — see
+    core/cyber_complaint.py.
+
+    Accepts multipart/form-data (rather than a JSON body) so an optional
+    government ID proof image can be attached alongside the fields - the
+    portal itself requires an ID proof upload (Aadhaar/PAN/Passport,
+    JPG/PNG, under 5MB) in Complainant Details, so this mirrors that."""
+    from core.cyber_complaint import generate_complaint_document
+
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="name is required")
+
+    try:
+        analysis_dict = json.loads(analysis)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="analysis must be valid JSON")
+
+    complainant = {
+        "name": name,
+        "phone": phone,
+        "email": email,
+        "address": address,
+        "incident_description": incident_description,
+    }
+
+    id_proof_payload = None
+    if id_proof is not None:
+        if id_proof.content_type not in _ID_PROOF_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="ID proof must be a JPG or PNG image")
+        raw = await id_proof.read()
+        if len(raw) > _ID_PROOF_MAX_BYTES:
+            raise HTTPException(status_code=400, detail="ID proof must be under 5MB")
+        id_proof_payload = {
+            "data_uri": f"data:{id_proof.content_type};base64,{base64.b64encode(raw).decode('ascii')}",
+            "filename": id_proof.filename or "id_proof",
+        }
+
+    try:
+        content, mime_type, filename = generate_complaint_document(
+            analysis_dict, complainant, file_name, id_proof_payload,
+        )
+    except Exception as e:  # Broad catch: document generation must never 500 opaquely
+        logger.warning("Complaint document generation failed: %s", e)
+        raise HTTPException(status_code=500, detail="Could not generate complaint document")
+
+    return Response(
+        content=content,
+        media_type=mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -459,8 +622,13 @@ async def get_analysis(
 @router.get("/models/status", response_model=ModelStatus)
 async def models_status():
     """List loaded models and their status."""
+    from core_models.reverse_search import is_configured as _reverse_search_configured
+
     reg = get_registry()
-    return ModelStatus(**reg.get_status())
+    return ModelStatus(
+        **reg.get_status(),
+        reverse_search_available=_reverse_search_configured(),
+    )
 
 
 @router.get("/health", response_model=HealthResponse)

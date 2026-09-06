@@ -16,6 +16,16 @@ const MEDIA_ICONS = {
   multimodal: <Layers size={14} className="text-accent" />,
 };
 
+// Friendly labels for the backend's `fusion_mode` — different modes can score
+// the same file differently, so the detail view names which one actually ran.
+const FUSION_MODE_LABEL = {
+  video_ensemble_7model: 'Full Ensemble',
+  corefakenet_fast: 'Fast CorefakeNet',
+  corefakenet_attention: 'Fast CorefakeNet',
+  learned: 'Full Ensemble (learned fusion)',
+  weighted_avg: 'Full Ensemble (weighted avg)',
+};
+
 function DetailPanel({ detail }) {
   if (!detail) return null;
 
@@ -49,6 +59,14 @@ function DetailPanel({ detail }) {
             <span className="text-xs text-text-3">Confidence</span>
             <span className="text-sm text-text-2">
               {detail.confidence}
+            </span>
+          </div>
+        )}
+        {detail.fusion_mode && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-text-3">Scored Via</span>
+            <span className="text-sm text-text-2">
+              {FUSION_MODE_LABEL[detail.fusion_mode] || detail.fusion_mode}
             </span>
           </div>
         )}

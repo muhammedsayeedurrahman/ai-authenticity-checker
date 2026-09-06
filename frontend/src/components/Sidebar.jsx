@@ -1,19 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image, Film, Mic, Layers, LayoutDashboard, Clock, Activity, LogOut, ShieldCheck } from 'lucide-react';
+import { Image, Film, Mic, FileSearch, Layers, LayoutDashboard, Clock, Activity, ShieldAlert, ShieldCheck, LogOut } from 'lucide-react';
 import useForensicStore from '../store/useForensicStore';
 import useAuthStore from '../store/useAuthStore';
 import { isAuthEnabled } from '../services/supabase';
 import logo from '../assets/logo.jpeg';
 
 const NAV_LINKS = [
-  { to: '/',           icon: LayoutDashboard, label: 'Dashboard', exact: true },
+  { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { to: '/image',      icon: Image,           label: 'Image' },
   { to: '/video',      icon: Film,            label: 'Video' },
   { to: '/audio',      icon: Mic,             label: 'Audio' },
+  { to: '/document',   icon: FileSearch,      label: 'Document' },
   { to: '/multimodal', icon: Layers,          label: 'Multimodal' },
   { to: '/history',    icon: Clock,           label: 'History' },
+  { to: '/complaint',  icon: ShieldAlert,     label: 'Cyber Complaint' },
   { to: '/compliance', icon: ShieldCheck,     label: 'Compliance' },
 ];
 

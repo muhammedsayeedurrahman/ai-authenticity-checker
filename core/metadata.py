@@ -147,29 +147,108 @@ def _parse_gps_coord(
         return None
 
 
+# digitalSourceType values (IPTC/C2PA controlled vocabulary, both the
+# older cv.iptc.org and newer c2pa.org URI forms have been seen in the
+# wild) that mean "a generative AI model produced this, in whole or as a
+# composite" - the manifest's own declaration, not an inference.
+_AI_DIGITAL_SOURCE_TYPES = (
+    "trainedAlgorithmicMedia",
+    "compositeWithTrainedAlgorithmicMedia",
+    "trainedAlgorithmicData",
+)
+
+_EMPTY_C2PA_RESULT = {
+    "has_c2pa": False,
+    "available": False,
+    "valid": False,
+    "validation_state": None,
+    "generator": None,
+    "actions": [],
+    "ai_generated_signal": False,
+    "trust_boost": 0.0,
+}
+
+
 def check_c2pa(file_path: str) -> dict[str, Any]:
     """
-    Check for C2PA content credentials (provenance chain).
+    Check for C2PA content credentials (provenance chain) and read the
+    manifest closely enough to act on it, not just note it exists.
 
     Requires: pip install c2pa-python
-    Returns trust signal if C2PA manifest found.
+
+    A C2PA manifest is a real signal in two opposite directions, so
+    presence alone isn't useful:
+      - If it's present, signature-valid, and declares an action chain
+        with no AI-generation digitalSourceType, that's genuine positive
+        evidence of authenticity (a real capture device or editing tool
+        signed it) - trust_boost is negative (reduces risk).
+      - If it's present and declares a trainedAlgorithmicMedia /
+        compositeWithTrainedAlgorithmicMedia digitalSourceType, that's
+        the content's *own* embedded declaration that generative AI
+        produced it - stronger, structured evidence than a free-text
+        EXIF software tag - trust_boost is strongly positive.
+      - If it's present but fails validation (validation_state ==
+        "Invalid"), the provenance chain itself was tampered with after
+        signing, which is suspicious in its own right.
     """
     try:
         import c2pa  # type: ignore
     except ImportError:
-        return {"has_c2pa": False, "available": False, "trust_boost": 0.0}
+        return dict(_EMPTY_C2PA_RESULT)
 
     try:
-        reader = c2pa.Reader.from_file(file_path)
-        manifest_json = reader.json()
+        reader = c2pa.Reader(file_path)
+    except Exception:
+        # No embedded manifest, or an asset type c2pa-python can't parse.
+        return {**_EMPTY_C2PA_RESULT, "available": True}
+
+    try:
+        manifest = reader.get_active_manifest() or {}
+        validation_state = reader.get_validation_state()
+
+        generator = manifest.get("claim_generator")
+
+        actions: list[dict[str, Any]] = []
+        ai_generated_signal = False
+        for assertion in manifest.get("assertions", []) or []:
+            label = assertion.get("label", "")
+            if not label.startswith("c2pa.actions"):
+                continue
+            for action in (assertion.get("data", {}) or {}).get("actions", []) or []:
+                digital_source_type = action.get("digitalSourceType") or ""
+                actions.append({
+                    "action": action.get("action", ""),
+                    "digital_source_type": digital_source_type,
+                    "software_agent": (action.get("softwareAgent") or {}).get("name")
+                    if isinstance(action.get("softwareAgent"), dict)
+                    else action.get("softwareAgent"),
+                })
+                if any(t in digital_source_type for t in _AI_DIGITAL_SOURCE_TYPES):
+                    ai_generated_signal = True
+
+        valid = validation_state in ("Trusted", "Valid")
+
+        if ai_generated_signal:
+            trust_boost = 0.6  # positive = increases risk (AI-generation evidence)
+        elif validation_state == "Invalid":
+            trust_boost = 0.3  # tampered provenance chain is itself suspicious
+        elif valid:
+            trust_boost = -0.2  # signed, valid, no AI declaration = authenticity signal
+        else:
+            trust_boost = 0.0
+
         return {
             "has_c2pa": True,
             "available": True,
-            "manifest": manifest_json,
-            "trust_boost": -0.2,  # negative = reduces risk score
+            "valid": valid,
+            "validation_state": validation_state,
+            "generator": generator,
+            "actions": actions,
+            "ai_generated_signal": ai_generated_signal,
+            "trust_boost": trust_boost,
         }
     except Exception:
-        return {"has_c2pa": False, "available": True, "trust_boost": 0.0}
+        return {**_EMPTY_C2PA_RESULT, "available": True}
 
 
 def compute_file_hash(file_path: str, algorithm: str = "sha256") -> str:
@@ -216,11 +295,11 @@ def extract_full_metadata(
     # C2PA check (requires file path)
     if file_path is not None:
         c2pa_result = check_c2pa(file_path)
-        metadata["has_c2pa"] = c2pa_result["has_c2pa"]
-        metadata["c2pa_trust_boost"] = c2pa_result["trust_boost"]
     else:
-        metadata["has_c2pa"] = False
-        metadata["c2pa_trust_boost"] = 0.0
+        c2pa_result = dict(_EMPTY_C2PA_RESULT)
+    metadata["has_c2pa"] = c2pa_result["has_c2pa"]
+    metadata["c2pa_trust_boost"] = c2pa_result["trust_boost"]
+    metadata["c2pa"] = c2pa_result
 
     # File hash
     if file_path is not None:

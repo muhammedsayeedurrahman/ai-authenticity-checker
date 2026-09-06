@@ -8,6 +8,7 @@ if (rawUrl.endsWith('/api')) {
 
 const api = axios.create({
   baseURL: rawUrl || '',
+  timeout: 600000, // 10 minutes for heavy multi-modal inference
 });
 
 // Attach Supabase JWT token to all requests when auth is enabled
@@ -49,14 +50,15 @@ export const forensicApi = {
     return response.data;
   },
 
-  analyzeImage: async (file, mode = 'ensemble', { signal } = {}) => {
+  analyzeImage: async (file, mode = 'ensemble', reverseSearch = false, { signal } = {}) => {
     const formData = new FormData();
     formData.append('file', file);
     const modeParam = mode.toLowerCase().includes('fast') ? 'fast' : 'ensemble';
-    const response = await api.post(`/api/v1/analyze/image?mode=${modeParam}`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      signal,
-    });
+    const response = await api.post(
+      `/api/v1/analyze/image?mode=${modeParam}&reverse_search=${reverseSearch}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' }, signal },
+    );
     return response.data;
   },
 
@@ -81,6 +83,19 @@ export const forensicApi = {
     return response.data;
   },
 
+  analyzeDocument: async (file, idType = '', idNumber = '', reverseSearch = false, { signal } = {}) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (idType) formData.append('id_type', idType);
+    if (idNumber) formData.append('id_number', idNumber);
+    const response = await api.post(
+      `/api/v1/analyze/document?reverse_search=${reverseSearch}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' }, signal },
+    );
+    return response.data;
+  },
+
   analyzeMultimodal: async (image, video, audio, { signal } = {}) => {
     const formData = new FormData();
     if (image) formData.append('image', image);
@@ -91,6 +106,29 @@ export const forensicApi = {
       signal,
     });
     return response.data;
+  },
+
+  generateComplaint: async (analysis, fileName, complainant, idProofFile) => {
+    const formData = new FormData();
+    formData.append('analysis', JSON.stringify(analysis));
+    formData.append('file_name', fileName || '');
+    formData.append('name', complainant.name);
+    formData.append('phone', complainant.phone || '');
+    formData.append('email', complainant.email || '');
+    formData.append('address', complainant.address || '');
+    formData.append('incident_description', complainant.incidentDescription || '');
+    if (idProofFile) formData.append('id_proof', idProofFile);
+
+    const response = await api.post('/api/v1/complaint/generate', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      responseType: 'blob',
+    });
+    const disposition = response.headers['content-disposition'] || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    return {
+      blob: response.data,
+      filename: match ? match[1] : 'cyber_complaint.html',
+    };
   },
 
   getHistory: async (limit = 20, mediaType = null) => {

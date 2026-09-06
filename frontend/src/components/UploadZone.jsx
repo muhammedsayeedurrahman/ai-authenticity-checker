@@ -61,12 +61,12 @@ export default function UploadZone({
 
       onFileSelect(file);
 
-      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+      if (file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/')) {
         const url = URL.createObjectURL(file);
         blobUrlRef.current = url;
-        setPreview({ url, type: file.type, name: file.name });
+        setPreview({ url, type: file.type, name: file.name, size: file.size });
       } else {
-        setPreview({ name: file.name, type: file.type });
+        setPreview({ name: file.name, type: file.type, size: file.size });
       }
     },
     [accept, onFileSelect, maxSizeMB],
@@ -124,7 +124,7 @@ export default function UploadZone({
         onDragLeave={() => setIsDragActive(false)}
         onDrop={handleDrop}
         onClick={() => { if (!preview) handleBrowseClick(); }}
-        className={`relative w-full rounded-xl flex flex-col items-center justify-center overflow-hidden min-h-[200px] border-2 border-dashed transition-colors duration-200 ${
+        className={`relative w-full rounded-xl flex flex-col items-center justify-center overflow-hidden min-h-[220px] border-2 border-dashed transition-colors duration-200 ${
           preview ? '' : 'cursor-pointer'
         } ${
           rejected || sizeError
@@ -162,18 +162,19 @@ export default function UploadZone({
             </p>
           </div>
         ) : preview && preview.url && preview.type?.startsWith('image/') ? (
+          /* Image Preview */
           <>
             <img
               src={preview.url}
               alt={preview.name}
               className="absolute inset-0 w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/5 to-black/10" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/20" />
             <div className="relative z-20 w-full flex flex-col items-center justify-end h-full text-center px-4 py-3">
-              <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-lg max-w-full">
+              <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg max-w-full">
                 <Check size={14} className="text-risk-clear flex-shrink-0" />
                 <span className="text-sm font-medium truncate max-w-[200px] text-white">
-                  {preview.name || 'File loaded'}
+                  {preview.name || 'Image loaded'}
                 </span>
               </div>
               <p className="text-xs mt-2 flex items-center gap-1 text-white/80">
@@ -181,6 +182,50 @@ export default function UploadZone({
               </p>
             </div>
           </>
+        ) : preview && preview.url && preview.type?.startsWith('video/') ? (
+          /* Video Preview Player */
+          <div className="relative z-20 w-full h-full p-2 flex flex-col items-center justify-center">
+            <video
+              src={preview.url}
+              controls
+              playsInline
+              className="w-full max-h-[170px] rounded-lg object-contain bg-black/90 shadow-md"
+            />
+            <div className="w-full flex items-center justify-between px-2 pt-2 text-[11px] text-text-2">
+              <span className="flex items-center gap-1 truncate max-w-[180px] font-medium text-text-1">
+                <Check size={12} className="text-risk-clear flex-shrink-0" />
+                {preview.name}
+              </span>
+              <span className="font-mono text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded text-[10px]">
+                Video Loaded
+              </span>
+            </div>
+          </div>
+        ) : preview && preview.url && preview.type?.startsWith('audio/') ? (
+          /* Audio Preview Player */
+          <div className="relative z-20 w-full h-full p-4 flex flex-col items-center justify-center space-y-3">
+            <div className="flex items-center gap-2 bg-purple-100/90 text-purple-900 px-3 py-1.5 rounded-xl border border-purple-200">
+              <Check size={14} className="text-emerald-600 flex-shrink-0" />
+              <span className="text-xs font-bold truncate max-w-[200px]">
+                {preview.name || 'Audio clip loaded'}
+              </span>
+            </div>
+            {/* Waveform representation */}
+            <div className="flex items-center gap-1 justify-center h-7 py-1">
+              {[0.4, 0.7, 1.0, 0.6, 0.85, 0.45, 0.9, 0.75, 0.5, 0.95, 0.65, 0.35, 0.8, 0.55].map((h, i) => (
+                <span
+                  key={i}
+                  className="w-1 bg-purple-500 rounded-full animate-pulse"
+                  style={{ height: `${h * 24}px`, animationDelay: `${i * 80}ms` }}
+                />
+              ))}
+            </div>
+            <audio
+              src={preview.url}
+              controls
+              className="w-full h-8 max-w-[260px]"
+            />
+          </div>
         ) : preview ? (
           <div className="flex flex-col items-center justify-center z-20 text-center px-6 py-6">
             <div className="flex items-center gap-2">

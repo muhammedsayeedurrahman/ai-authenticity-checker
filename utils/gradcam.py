@@ -325,13 +325,15 @@ def create_heatmap_overlay(pil_image, heatmap, alpha=0.6, size=(224, 224)):
         PIL Image with heatmap overlay.
     """
     img = np.array(pil_image.convert("RGB").resize(size))
-    heatmap_resized = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
+    heatmap_clean = np.nan_to_num(heatmap, nan=0.0, posinf=1.0, neginf=0.0)
+    heatmap_resized = cv2.resize(heatmap_clean, (img.shape[1], img.shape[0]))
+    heatmap_resized = np.clip(heatmap_resized, 0.0, 1.0)
 
     # Gamma correction for better artifact visibility
     heatmap_resized = np.power(heatmap_resized, 0.7)
 
     heatmap_colored = cv2.applyColorMap(
-        np.uint8(255 * heatmap_resized), cv2.COLORMAP_HOT
+        np.uint8(np.clip(255 * heatmap_resized, 0, 255)), cv2.COLORMAP_HOT
     )
     heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
 
@@ -374,11 +376,13 @@ def create_face_region_overlay(pil_image, heatmap, face_bbox, alpha=0.6, size=(4
         return create_heatmap_overlay(pil_image, heatmap, alpha, size)
 
     # Resize heatmap to face region size
-    heatmap_resized = cv2.resize(heatmap, (face_w, face_h))
+    heatmap_clean = np.nan_to_num(heatmap, nan=0.0, posinf=1.0, neginf=0.0)
+    heatmap_resized = cv2.resize(heatmap_clean, (face_w, face_h))
+    heatmap_resized = np.clip(heatmap_resized, 0.0, 1.0)
     heatmap_resized = np.power(heatmap_resized, 0.7)
 
     heatmap_colored = cv2.applyColorMap(
-        np.uint8(255 * heatmap_resized), cv2.COLORMAP_HOT
+        np.uint8(np.clip(255 * heatmap_resized, 0, 255)), cv2.COLORMAP_HOT
     )
     heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
 

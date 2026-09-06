@@ -10,6 +10,7 @@ const NODES = [
 
 const NODE_Y = 18;
 const HUB_Y = 82;
+const ACCENT = '#6D28D9';
 
 /**
  * Connects the 3 modality upload slots to a central "fusion" node —
@@ -29,14 +30,19 @@ export default function FusionVisualizer({ image, video, audio, isAnalyzing }) {
         preserveAspectRatio="none"
       >
         {NODES.map(({ key, x }) => (
-          <line
+          <motion.line
             key={key}
             x1={x} y1={NODE_Y} x2={50} y2={HUB_Y}
-            stroke={active[key] ? '#3B82F6' : 'rgba(255,255,255,0.08)'}
+            stroke={active[key] ? ACCENT : 'rgba(139, 92, 246, 0.15)'}
             strokeWidth={0.6}
             strokeDasharray={active[key] ? '4 3' : undefined}
-            className={isAnalyzing && active[key] ? 'fusion-line-pulse' : ''}
             vectorEffect="non-scaling-stroke"
+            animate={
+              isAnalyzing && active[key]
+                ? { strokeDashoffset: [0, -14] }
+                : { strokeDashoffset: 0 }
+            }
+            transition={{ duration: 0.6, repeat: isAnalyzing ? Infinity : 0, ease: 'linear' }}
           />
         ))}
       </svg>
@@ -50,10 +56,10 @@ export default function FusionVisualizer({ image, video, audio, isAnalyzing }) {
           <motion.div
             animate={{ opacity: active[key] ? 1 : 0.4, scale: active[key] ? 1.05 : 1 }}
             transition={{ duration: 0.2 }}
-            className={`w-9 h-9 rounded-lg flex items-center justify-center border ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center border ${
               active[key]
-                ? 'bg-accent-dim border-accent/30 text-accent'
-                : 'bg-bg-inset border-border-dim text-text-3'
+                ? 'bg-purple-100 border-purple-400 text-purple-700 shadow-sm'
+                : 'bg-white/60 border-purple-200/60 text-[#8F81A8]'
             }`}
           >
             <Icon size={16} />
@@ -66,15 +72,22 @@ export default function FusionVisualizer({ image, video, audio, isAnalyzing }) {
         style={{ left: '50%', top: `${HUB_Y}%` }}
       >
         <motion.div
-          animate={{ opacity: anyActive ? 1 : 0.4, scale: anyActive ? 1 : 0.9 }}
-          transition={{ duration: 0.2 }}
+          animate={{
+            opacity: anyActive ? 1 : 0.4,
+            scale: anyActive ? (isAnalyzing ? [1, 1.12, 1] : 1) : 0.9,
+          }}
+          transition={
+            isAnalyzing
+              ? { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }
+              : { duration: 0.2 }
+          }
           className={`w-10 h-10 rounded-full flex items-center justify-center border ${
             anyActive
-              ? 'bg-accent text-white border-accent shadow-glow-blue'
-              : 'bg-bg-inset border-border-dim text-text-3'
+              ? 'bg-gradient-to-tr from-purple-700 to-indigo-600 text-white border-purple-400 shadow-md shadow-purple-500/30'
+              : 'bg-white/60 border-purple-200/60 text-[#8F81A8]'
           }`}
         >
-          <Zap size={18} className={isAnalyzing ? 'animate-pulse' : ''} />
+          <Zap size={18} />
         </motion.div>
       </div>
     </div>

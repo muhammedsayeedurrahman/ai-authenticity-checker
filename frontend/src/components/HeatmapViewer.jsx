@@ -24,7 +24,9 @@ export default function HeatmapViewer({ originalFile, gradcamBase64 }) {
   }, [originalFile]);
 
   const originalUrl = blobUrlRef.current;
-  const heatmapUrl = gradcamBase64 ? `data:image/png;base64,${gradcamBase64}` : null;
+  const heatmapUrl = gradcamBase64
+    ? (gradcamBase64.startsWith('data:') ? gradcamBase64 : `data:image/png;base64,${gradcamBase64}`)
+    : null;
 
   // Only reveal once there's an actual analysis result to show — the raw
   // uploaded file is already previewed inline in the UploadZone dropzone,

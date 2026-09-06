@@ -9,8 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
 # Force SQLite for tests
 os.environ.setdefault("DATABASE_URL", "")
@@ -42,28 +40,38 @@ def _mock_registry():
 
 
 @pytest.fixture()
-def client(_mock_registry, monkeypatch):
-    """FastAPI TestClient with mocked model registry and an isolated in-memory DB.
+def client(_mock_registry, tmp_path, monkeypatch):
+    """FastAPI TestClient with mocked model registry and an isolated,
+    per-test SQLite DB.
 
-    Entering TestClient as a context manager runs the app's `lifespan`, which
-    calls `init_db()` to create tables. The engine/session factory are
-    monkeypatched beforehand so that call creates tables on an isolated
-    in-memory SQLite DB instead of the real on-disk one.
+    Two bugs this fixes at once:
+      1. `TestClient(app)` used bare (no `with`) never runs the ASGI
+         lifespan, so `init_db()` never creates the `analyses` table.
+         This passed locally only because the dev machine's real
+         proofyx_history.db already had that table from actually running
+         main.py - a fresh CI checkout has no such file, so every test
+         hitting an endpoint that writes history failed with
+         "no such table: analyses". `with TestClient(app) as c:` runs
+         startup/shutdown for real (registry is still mocked, so no real
+         models load).
+      2. Without an isolated DB, those same writes were landing in the
+         real dev-machine proofyx_history.db - local test runs were
+         quietly inserting fake "test.jpg" rows into real analysis
+         history. Point DATABASE_URL at a pytest tmp_path file instead,
+         and reset the cached engine/session factory so the new URL
+         actually takes effect (db.database caches them as module
+         globals).
     """
-    import db.database as database
+    db_path = tmp_path / "test_history.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
 
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    monkeypatch.setattr(database, "_engine", engine)
-    monkeypatch.setattr(database, "_session_factory", factory)
+    import db.database as database
+    monkeypatch.setattr(database, "_engine", None)
+    monkeypatch.setattr(database, "_session_factory", None)
 
     from main import app
-    with TestClient(app) as test_client:
-        yield test_client
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture()

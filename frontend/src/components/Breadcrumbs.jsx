@@ -14,8 +14,8 @@ const ROUTE_LABELS = {
 export default function Breadcrumbs() {
   const { pathname } = useLocation();
 
-  // Don't show on dashboard (root)
-  if (pathname === '/') return null;
+  // Don't show on dashboard
+  if (pathname === '/' || pathname === '/dashboard') return null;
 
   const segment = pathname.replace(/^\//, '').split('/')[0];
   const label = ROUTE_LABELS[segment];
@@ -25,7 +25,7 @@ export default function Breadcrumbs() {
   return (
     <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 mb-4 text-xs">
       <Link
-        to="/"
+        to="/dashboard"
         className="flex items-center gap-1 text-text-3 hover:text-text-1 transition-colors"
       >
         <Home size={12} />

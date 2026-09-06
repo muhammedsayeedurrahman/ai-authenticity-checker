@@ -1,34 +1,26 @@
 import React from 'react';
 
 /**
- * Consistent page header used across all pages.
- *
- * @param {React.ElementType} [icon] - Lucide icon component
- * @param {string} title - Page title
- * @param {string} [subtitle] - Optional subtitle text
- * @param {boolean} [gradient] - Use gradient text for title
- * @param {React.ReactNode} [actions] - Right-side slot for buttons/filters
+ * Consistent page header with sleek pill badge and modern typography.
  */
-export default function PageHeader({ icon: Icon, title, subtitle, gradient = false, actions }) {
+export default function PageHeader({ icon: Icon, title, subtitle, actions }) {
   return (
-    <header className="flex items-start justify-between flex-wrap gap-5 mb-1">
-      <div>
-        <div className="flex items-center gap-3 mb-1.5">
+    <header className="flex items-start justify-between flex-wrap gap-4 mb-6">
+      <div className="space-y-1">
+        <div className="flex items-center gap-3">
           {Icon && (
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center bg-accent-dim border border-accent/20"
-            >
-              <Icon size={14} className="text-accent" />
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-white border border-purple-200 shadow-sm text-purple-700 shadow-purple-500/10">
+              <Icon size={20} />
             </div>
           )}
-          <h1
-            className={`font-display text-2xl font-bold tracking-tight ${gradient ? 'gradient-text' : 'text-text-1'}`}
-          >
+          <h1 className="font-display text-2xl sm:text-3xl font-black tracking-tight text-[#1E1238]">
             {title}
           </h1>
         </div>
         {subtitle && (
-          <p className="text-sm text-text-2 leading-relaxed">{subtitle}</p>
+          <p className="text-xs sm:text-sm text-[#5B4E75] font-medium leading-relaxed max-w-2xl pl-0 sm:pl-1">
+            {subtitle}
+          </p>
         )}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}

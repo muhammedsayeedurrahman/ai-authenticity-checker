@@ -9,11 +9,30 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _to_float(v: Any) -> float:
+    """Coerce numpy/torch scalars to a native Python float."""
+    if hasattr(v, "item"):
+        return float(v.item())
+    return float(v)
 
 
 class ProofyxBase(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
+
+    @field_validator("risk_score", mode="before", check_fields=False)
+    @classmethod
+    def clamp_risk_score(cls, v: Any) -> float:
+        """Coerce to float and clamp to [0, 1]."""
+        return max(0.0, min(1.0, _to_float(v)))
+
+    @field_validator("risk_percent", mode="before", check_fields=False)
+    @classmethod
+    def clamp_risk_percent(cls, v: Any) -> float:
+        """Coerce to float and clamp to [0, 100]."""
+        return max(0.0, min(100.0, _to_float(v)))
 
 
 # ──────────────────────────────────────────────
@@ -122,6 +141,10 @@ class ImageAnalysisResult(ProofyxBase):
     gradcam_image: Optional[str] = Field(
         default=None, description="Bare base64 PNG (no data-URI prefix)",
     )
+    gradcam_overlay: Optional[str] = Field(
+        default=None, description="Base64 PNG data URI, as emitted by the pipeline",
+    )
+    reverse_search: Optional[dict[str, Any]] = None
 
 
 class ImageAnalysisResponse(BaseModel):
@@ -155,6 +178,7 @@ class VideoAnalysisResult(ProofyxBase):
     real_frames: int = 0
     temporal_analysis: Optional[TemporalAnalysisResponse] = None
     video_info: dict[str, Any] = Field(default_factory=dict)
+    fusion_mode: str = ""
     processing_time_ms: float = 0.0
     media_type: str = "video"
     cybercrime_risk: Optional[CybercrimeRiskResponse] = None
@@ -171,7 +195,7 @@ class VideoAnalysisResponse(BaseModel):
 # Audio Analysis
 # ──────────────────────────────────────────────
 
-class AudioAnalysisResult(BaseModel):
+class AudioAnalysisResult(ProofyxBase):
     id: str = ""
     timestamp: str = ""
     risk_score: float = Field(ge=0, le=1)
@@ -208,6 +232,8 @@ class MultimodalAnalysisResult(ProofyxBase):
     confidence: str
     media_types: list[str] = Field(default_factory=list)
     modality_scores: dict[str, Optional[float]] = Field(default_factory=dict)
+    flagged_modalities: list[str] = Field(default_factory=list)
+    clean_modalities: list[str] = Field(default_factory=list)
     fusion_weights: dict[str, float] = Field(default_factory=dict)
     explanation: str = ""
     processing_time_ms: float = 0.0
@@ -219,6 +245,69 @@ class MultimodalAnalysisResult(ProofyxBase):
 class MultimodalAnalysisResponse(BaseModel):
     success: bool
     data: Optional[MultimodalAnalysisResult] = None
+    error: Optional[str] = None
+
+
+# ──────────────────────────────────────────────
+# Document / ID Analysis
+# ──────────────────────────────────────────────
+
+class DocumentExifResponse(BaseModel):
+    has_exif: bool = False
+    suspicious: bool = False
+    suspicion_score: float = 0.0
+    findings: list[str] = Field(default_factory=list)
+    camera_make: Optional[str] = None
+    camera_model: Optional[str] = None
+    software: Optional[str] = None
+
+
+class IdValidationResponse(BaseModel):
+    valid: bool
+    reason: str
+    id_type: str
+    id_label: str
+
+
+class C2paResponse(BaseModel):
+    valid: bool = False
+    validation_state: Optional[str] = None
+    generator: Optional[str] = None
+    ai_generated_signal: bool = False
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DocumentAnalysisResult(ProofyxBase):
+    id: str = ""
+    timestamp: str = ""
+    risk_score: float = Field(ge=0, le=1)
+    risk_percent: float = Field(ge=0, le=100)
+    verdict: str
+    confidence: str
+    risk_level: str = ""
+    primary_finding: str = ""
+    ai_generated_likely: bool = False
+    ai_generated_score: float = 0.0
+    manipulation_likely: bool = False
+    manipulation_score: float = 0.0
+    checks: dict[str, str] = Field(default_factory=dict)
+    ela_score: float = 0.0
+    noise_consistency_score: float = 0.0
+    copy_move_score: float = 0.0
+    copy_move_matches: int = 0
+    id_validation: Optional[IdValidationResponse] = None
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    exif: Optional[DocumentExifResponse] = None
+    has_c2pa: bool = False
+    c2pa: Optional[C2paResponse] = None
+    reverse_search: Optional[dict[str, Any]] = None
+    processing_time_ms: float = 0.0
+    media_type: str = "document"
+
+
+class DocumentAnalysisResponse(BaseModel):
+    success: bool
+    data: Optional[DocumentAnalysisResult] = None
     error: Optional[str] = None
 
 
@@ -255,6 +344,7 @@ class ModelStatus(BaseModel):
     total: int = 0
     corefakenet_ready: bool = False
     device: str = "cpu"
+    reverse_search_available: bool = False
 
 
 class HealthResponse(BaseModel):

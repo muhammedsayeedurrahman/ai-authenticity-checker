@@ -1,0 +1,34 @@
+# Vercel only needs frontend/ (Root Directory is set to "frontend" in
+# the project settings) - everything below is backend-only or huge
+# binary weights that were force-tracked into git for the separate HF
+# Spaces deploy, and would otherwise blow past Vercel's 100MB/file and
+# reasonable upload-size limits.
+#
+# Note: in practice, `vercel --prod` run from the repo root still
+# uploaded several GB (models/ + .git's LFS history) despite this file
+# - .vercelignore didn't reliably exclude them for a CLI deploy in this
+# setup. The approach that actually worked: copy frontend/'s source
+# (+ .vercel/project.json) into a clean directory with none of this
+# repo's history/weights nearby, and deploy from there instead.
+/models/
+.git/
+.venv/
+node_modules/
+frontend/node_modules/
+*.pth
+*.joblib
+*.caffemodel
+/api/
+/core/
+/core_models/
+/db/
+/alembic/
+/training/
+/general_ai/
+/inference/
+/pipeline/
+/evaluation/
+/utils/
+/docs/
+/configs/
+/tests/

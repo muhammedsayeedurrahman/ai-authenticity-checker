@@ -21,7 +21,7 @@ describe('App', () => {
     vi.clearAllMocks();
   });
 
-  it('renders Dashboard on root route without auth', async () => {
+  it('renders landing page on root route without auth', async () => {
     const { default: App } = await import('../App');
 
     // Need to render with MemoryRouter since App has its own BrowserRouter

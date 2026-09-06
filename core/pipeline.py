@@ -1,9 +1,8 @@
 """
 Core detection pipeline for ProofyX.
 
-Extracted from app.py — all functions return plain Python dicts
-with no UI framework dependencies. Both the Gradio UI and FastAPI
-REST API call these functions identically.
+All functions return plain Python dicts with no UI framework
+dependencies, called directly by the FastAPI REST API layer.
 
 probability is ALWAYS P(fake): 0.0 = certainly real, 1.0 = certainly fake.
 """
@@ -610,7 +609,7 @@ def _analyze_image_ensemble(
     model_agreement = f"{fake_count}/{active_models} models detect manipulation"
 
     # GradCAM
-    gradcam_img = None
+    gradcam_overlay = None
     try:
         gradcam_img = generate_gradcam_image(
             image_pil, reg.models.get("face"), device,
@@ -618,6 +617,9 @@ def _analyze_image_ensemble(
             eff_model=reg.models.get("efficientnet"),
             dino_model=reg.models.get("dino"),
         )
+        if gradcam_img is not None:
+            from core.reports import image_to_base64
+            gradcam_overlay = image_to_base64(gradcam_img)
     except (RuntimeError, ValueError, TypeError) as e:
         logger.warning("GradCAM failed: %s", e)
 
@@ -674,7 +676,7 @@ def _analyze_image_ensemble(
         "forensic_ml_score": forensic_ml_score,
         "face_detected": has_face,
         "face_aligned": has_face,
-        "gradcam_image": gradcam_img,
+        "gradcam_overlay": gradcam_overlay,
         "original_image": image_pil,
         "models_used": active_models,
         "processing_time_ms": elapsed_ms,
@@ -729,7 +731,7 @@ def _analyze_image_fast(
         explanation = ""
 
     # GradCAM
-    gradcam_img = None
+    gradcam_overlay = None
     try:
         gradcam_img = generate_gradcam_image(
             image_pil, reg.models.get("face"), reg.device,
@@ -737,6 +739,9 @@ def _analyze_image_fast(
             eff_model=reg.models.get("efficientnet"),
             dino_model=reg.models.get("dino"),
         )
+        if gradcam_img is not None:
+            from core.reports import image_to_base64
+            gradcam_overlay = image_to_base64(gradcam_img)
     except (RuntimeError, ValueError, TypeError):
         pass
 
@@ -770,7 +775,7 @@ def _analyze_image_fast(
         "fusion_mode": "corefakenet_attention",
         "face_detected": has_face,
         "face_aligned": has_face,
-        "gradcam_image": gradcam_img,
+        "gradcam_overlay": gradcam_overlay,
         "original_image": image_pil,
         "models_used": 1,
         "processing_time_ms": elapsed_ms,
@@ -1069,6 +1074,7 @@ def analyze_video(
         },
         "video_info": result.get("video_info", {}),
         "aggregation_method": result.get("aggregation_method", aggregation),
+        "fusion_mode": "video_ensemble_7model",
         "processing_time_ms": elapsed_ms,
         "explanation": explanation,
         "media_type": "video",
@@ -1176,7 +1182,16 @@ def analyze_multimodal(
                 modality_scores["image"] = img_result["risk_score"]
 
         if video_path is not None:
-            vid_result = analyze_video(video_path)
+            # "fast" mode (single lightweight CorefakeNet pass) was found to
+            # miss a real deepfake that "ensemble" mode (7-model vote) caught
+            # correctly (28% vs 65% risk on the same clip, confirmed via
+            # direct testing) - a genuine accuracy gap, not just a sampling
+            # density issue (raising fast mode's fps from 1.0 to 2.0 fixed a
+            # separate run-to-run *consistency* bug but didn't fix this).
+            # image already uses "ensemble" here for the same reason; video
+            # was the odd one out. Ensemble is slower, but the overall
+            # multimodal request already budgets up to 600s.
+            vid_result = analyze_video(video_path, fps=1.0, mode="ensemble")
             if "error" not in vid_result:
                 results["video"] = vid_result
                 modality_scores["video"] = vid_result["risk_score"]
@@ -1200,6 +1215,22 @@ def analyze_multimodal(
 
         verdict = Verdict.from_risk_score(final_score)
         confidence_enum = Confidence.from_risk_score(final_score)
+
+        # The fused risk_score/verdict is a single weighted number, which can
+        # read as "everything here is fake" even when only some modalities
+        # actually triggered - e.g. a genuine photo alongside a deepfaked
+        # video+audio pair fuses to an AI-GENERATED verdict overall, which is
+        # correct for "this submission contains AI-generated content" but
+        # misleading if skimmed as "this image is fake too". Surfacing which
+        # modalities individually crossed the threshold (same 0.60 cutoff
+        # Verdict.from_risk_score uses) lets the UI say that explicitly
+        # instead of only showing it buried in the per-modality score bars.
+        flagged_modalities = sorted(
+            k for k, v in active_scores.items() if v >= 0.60
+        )
+        clean_modalities = sorted(
+            k for k, v in active_scores.items() if v < 0.60
+        )
 
         try:
             from utils.explainability import explain_multimodal
@@ -1239,6 +1270,8 @@ def analyze_multimodal(
             "confidence": confidence_enum.value,
             "media_types": list(active.keys()),
             "modality_scores": modality_scores,
+            "flagged_modalities": flagged_modalities,
+            "clean_modalities": clean_modalities,
             "fusion_weights": fusion_weights,
             "explanation": explanation,
             "processing_time_ms": elapsed_ms,
@@ -1268,6 +1301,221 @@ def _compute_fusion_weights(modalities: set[str]) -> dict[str, float]:
     # Equal weighting fallback
     n = len(modalities)
     return {m: 1.0 / n for m in modalities}
+
+
+# ──────────────────────────────────────────────
+# Document / ID Analysis
+# ──────────────────────────────────────────────
+
+def analyze_document(
+    image_pil: Image.Image,
+    file_path: Optional[str] = None,
+    id_type: Optional[str] = None,
+    id_number: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Analyze a document/ID/receipt/certificate image for AI generation or
+    digital tampering. A distinct question from the portrait pipeline -
+    most document content has no face to align, and the artifacts that
+    matter (splices, recompression seams, copy-move edits) are different
+    from deepfake face artifacts.
+
+    Combines:
+      - core/metadata.py's AI-authoring-tool EXIF tag and C2PA
+        AI-generation credential as direct evidence of AI generation.
+        (CorefakeNet was tried here too, applied to the whole document and
+        separately to a cropped embedded photo - both produced severe
+        false positives on real government IDs, so it's not used for
+        documents; see the ai_generated_score comment below.)
+      - core_models/document_forensics.py: ELA, noise-grid consistency,
+        copy-move detection (classical CV, no training data needed).
+      - core/metadata.py: EXIF + C2PA (already built, previously unused
+        by any live endpoint).
+      - core_models/id_validators.py: optional format/checksum check on
+        a user-typed Aadhaar/PAN/Voter ID number (id_type/id_number) -
+        not OCR, the user provides the number printed on the document.
+        Aadhaar has a real public checksum (Verhoeff); PAN/Voter ID only
+        have a documented format, no public checksum - see that module's
+        docstring for why the two are treated differently.
+
+    Returns plain dict — see docs/ARCHITECTURE.md for schema.
+    """
+    start_time = time.perf_counter()
+
+    from core_models.document_forensics import analyze_document_forensics
+    from core_models.id_validators import validate_id_number
+    from core.metadata import extract_full_metadata
+    from core.reports import image_to_base64
+
+    img = image_pil.convert("RGB")
+
+    # Generic AI-generation signal: NOT computed from CorefakeNet here.
+    #
+    # Tried CorefakeNet on the whole document image, then on an
+    # auto-detected/manually-cropped embedded photo - both tested against
+    # real government IDs (Indian PAN card) and both produced severe false
+    # positives (94% "AI-GENERATED" on an unmodified whole-image scan, and
+    # separately on a tight photo crop). CorefakeNet is trained on natural
+    # camera photos vs. AI generations; a printed/laminated ID photo's
+    # scan/print/recompression artifacts are out-of-domain for it either
+    # way, and raising the decision threshold cannot compensate for a raw
+    # score that confident. Rather than keep an actively-misleading signal,
+    # ai_generated_score now comes only from direct metadata evidence below
+    # (an explicit AI-authoring-tool EXIF tag, or a C2PA AI-generation
+    # credential) - real evidence that isn't subject to this domain
+    # mismatch. A validated document-domain classifier, trained on real
+    # ID/certificate data, is the actual fix; this repo has none.
+    ai_generated_score = 0.0
+
+    forensics = analyze_document_forensics(img)
+    manipulation_score = forensics["manipulation_score"]
+
+    metadata = extract_full_metadata(img, file_path=file_path)
+    exif_suspicion = metadata.get("exif_suspicion_score", 0.0)
+
+    # AI-authoring-tool tag in EXIF is direct, strong evidence of
+    # generation - boost ai_generated_score rather than diluting it into
+    # the generic exif_suspicion blend.
+    if metadata.get("exif") and any(
+        "AI software detected" in f for f in metadata.get("exif_findings", [])
+    ):
+        ai_generated_score = max(ai_generated_score, 0.75)
+
+    # C2PA content credentials: a structured, signed provenance chain is
+    # stronger evidence than a free-text EXIF tag in either direction -
+    # see core/metadata.py::check_c2pa for the three cases this covers.
+    c2pa_info = metadata.get("c2pa") or {}
+    if c2pa_info.get("ai_generated_signal"):
+        ai_generated_score = max(ai_generated_score, 0.90)
+    elif c2pa_info.get("validation_state") == "Invalid":
+        manipulation_score = float(np.clip(
+            manipulation_score + c2pa_info.get("trust_boost", 0.0), 0.0, 1.0,
+        ))
+    elif c2pa_info.get("valid"):
+        manipulation_score = float(np.clip(
+            manipulation_score + c2pa_info.get("trust_boost", 0.0), 0.0, 1.0,
+        ))
+
+    # Deliberately NOT folding generic exif_suspicion (missing camera/
+    # timestamp/software/GPS tags) into manipulation_score here: every
+    # photo of a physical document that's been through WhatsApp/a
+    # messaging app - the overwhelmingly common real-world case for this
+    # feature - gets its EXIF stripped by recompression whether the
+    # document is genuine or not, so "no EXIF" is uninformative for
+    # documents specifically (unlike for the general image pipeline,
+    # where it's a real signal). The one exif finding that IS strong,
+    # direct evidence - an AI-authoring-tool tag - is already handled
+    # above by boosting ai_generated_score, not through this path.
+
+    id_validation = validate_id_number(id_type, id_number)
+    if id_validation is not None and id_validation["valid"] is False and id_type == "aadhaar":
+        # A failed Verhoeff checksum is a real, deterministic defect -
+        # unlike a PAN/Voter ID format mismatch (far more likely to be a
+        # manual-entry typo than evidence of forgery), so this is the
+        # only case that moves the score rather than staying purely
+        # informational in the response.
+        manipulation_score = float(np.clip(manipulation_score + 0.15, 0.0, 1.0))
+
+    # Either signal alone is meaningful; averaging would dilute a real
+    # hit from one detector with a quiet reading from the other (the
+    # exact "dilution" failure mode documented for the portrait
+    # ensemble - avoided here on purpose since these two signals
+    # measure genuinely different things).
+    risk_score = max(ai_generated_score, manipulation_score)
+    confidence_enum = Confidence.from_risk_score(risk_score)
+
+    # 0.60 is the calibrated threshold for CorefakeNet on its trained
+    # domain (portraits). Applied blind to whole documents it is an
+    # unvalidated transfer signal that misfires on genuine IDs/certificates
+    # - holograms, lamination glare, and dense printed text read as
+    # synthesis artifacts to a face-trained model. Raising the bar to 0.72
+    # (still below the 0.75/0.90 EXIF/C2PA boosts above, which are direct
+    # evidence and should keep triggering on their own) cuts obvious false
+    # positives on genuine documents without needing retraining data this
+    # repo doesn't have. Still a mitigation, not a fix - a document-domain
+    # classifier trained on real ID/certificate data is the real fix.
+    ai_generated_likely = ai_generated_score >= 0.72
+    manipulation_likely = manipulation_score >= 0.60
+
+    # The generic binary Verdict enum (AUTHENTIC/AI-GENERATED) can't
+    # represent "flagged, but for tampering rather than AI generation" -
+    # using it directly here mislabeled manipulation-only findings as
+    # "AI-GENERATED" even when the AI-generation check itself came back
+    # clean. Documents get a third, more honest label instead.
+    if ai_generated_likely and ai_generated_score >= manipulation_score:
+        primary_finding = "AI-GENERATED DOCUMENT SUSPECTED"
+        verdict_label = "AI-GENERATED"
+    elif manipulation_likely:
+        primary_finding = "MANIPULATION SUSPECTED"
+        verdict_label = "MANIPULATED"
+    else:
+        primary_finding = "AUTHENTIC DOCUMENT"
+        verdict_label = "AUTHENTIC"
+
+    checks = {
+        "ai_generation": "Detected" if ai_generated_likely else "Not detected",
+        "tampering": "Detected" if forensics["ela_score"] >= 0.5 else "Not detected",
+        "copy_move": "Detected" if forensics["copy_move_score"] >= 0.5 else "Not detected",
+        "metadata": "Suspicious" if metadata.get("exif_suspicious") else "Analyzed",
+    }
+    if id_validation is not None:
+        checks["id_number"] = "Valid format" if id_validation["valid"] else "Invalid"
+    if c2pa_info.get("has_c2pa"):
+        if c2pa_info.get("ai_generated_signal"):
+            checks["c2pa"] = "AI-generation declared"
+        elif c2pa_info.get("validation_state") == "Invalid":
+            checks["c2pa"] = "Tampered"
+        elif c2pa_info.get("valid"):
+            checks["c2pa"] = "Verified"
+        else:
+            checks["c2pa"] = "Present, unverified"
+
+    evidence: dict[str, Any] = {}
+    try:
+        evidence["ela_map"] = image_to_base64(forensics["ela_map"])
+    except Exception:  # Broad catch: evidence image is supplementary, never fatal
+        pass
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+    return {
+        "risk_score": risk_score,
+        "risk_percent": risk_score * 100,
+        "verdict": verdict_label,
+        "confidence": confidence_enum.value,
+        "risk_level": RiskLevel.from_risk_score(risk_score).value,
+        "primary_finding": primary_finding,
+        "ai_generated_likely": ai_generated_likely,
+        "ai_generated_score": ai_generated_score,
+        "manipulation_likely": manipulation_likely,
+        "manipulation_score": manipulation_score,
+        "checks": checks,
+        "ela_score": forensics["ela_score"],
+        "noise_consistency_score": forensics["noise_consistency_score"],
+        "copy_move_score": forensics["copy_move_score"],
+        "copy_move_matches": forensics["copy_move_matches"],
+        "id_validation": id_validation,
+        "evidence": evidence,
+        "exif": {
+            "has_exif": metadata.get("has_exif", False),
+            "suspicious": metadata.get("exif_suspicious", False),
+            "suspicion_score": exif_suspicion,
+            "findings": metadata.get("exif_findings", []),
+            "camera_make": (metadata.get("exif") or {}).get("camera_make"),
+            "camera_model": (metadata.get("exif") or {}).get("camera_model"),
+            "software": (metadata.get("exif") or {}).get("software"),
+        },
+        "has_c2pa": c2pa_info.get("has_c2pa", False),
+        "c2pa": {
+            "valid": c2pa_info.get("valid", False),
+            "validation_state": c2pa_info.get("validation_state"),
+            "generator": c2pa_info.get("generator"),
+            "ai_generated_signal": c2pa_info.get("ai_generated_signal", False),
+            "actions": c2pa_info.get("actions", []),
+        } if c2pa_info.get("has_c2pa") else None,
+        "processing_time_ms": elapsed_ms,
+        "media_type": "document",
+    }
 
 
 def _empty_result(media_type: str, start_time: float, error: str = "") -> dict[str, Any]:
