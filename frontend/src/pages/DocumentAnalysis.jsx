@@ -271,7 +271,9 @@ export default function DocumentAnalysis() {
 
             <div className="p-3 rounded-2xl bg-purple-50/70 border border-purple-100 text-xs text-[#5B4E75] leading-relaxed">
               Heuristic forensic checks (error-level analysis, noise consistency,
-              copy-move detection, metadata, C2PA) plus a generic AI-image detector.
+              copy-move detection, metadata, C2PA). AI-generation detection relies
+              on EXIF/C2PA evidence only — a neural detector was tested but produced
+              false positives on real government IDs, so it isn't used here.
               Not a trained document classifier yet — treat results as a first pass.
             </div>
           </div>

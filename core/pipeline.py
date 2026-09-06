@@ -1080,11 +1080,12 @@ def analyze_document(
     from deepfake face artifacts.
 
     Combines:
-      - CorefakeNet applied to the whole image (no face crop) as a
-        generic "does this look AI-synthesized" signal - a transfer
-        application of a portrait-trained model, not a validated fit
-        for document content, but the only trained-model signal
-        available here.
+      - core/metadata.py's AI-authoring-tool EXIF tag and C2PA
+        AI-generation credential as direct evidence of AI generation.
+        (CorefakeNet was tried here too, applied to the whole document and
+        separately to a cropped embedded photo - both produced severe
+        false positives on real government IDs, so it's not used for
+        documents; see the ai_generated_score comment below.)
       - core_models/document_forensics.py: ELA, noise-grid consistency,
         copy-move detection (classical CV, no training data needed).
       - core/metadata.py: EXIF + C2PA (already built, previously unused
@@ -1099,7 +1100,6 @@ def analyze_document(
     Returns plain dict — see docs/ARCHITECTURE.md for schema.
     """
     start_time = time.perf_counter()
-    reg = get_registry()
 
     from core_models.document_forensics import analyze_document_forensics
     from core_models.id_validators import validate_id_number
@@ -1108,26 +1108,23 @@ def analyze_document(
 
     img = image_pil.convert("RGB")
 
-    # Generic AI-generation signal (whole image, no face crop).
+    # Generic AI-generation signal: NOT computed from CorefakeNet here.
     #
-    # Tried cropping to an auto-detected embedded photo here on the theory
-    # that CorefakeNet (portrait-trained) would score more accurately on a
-    # face-like input than a whole document. Reverted: tested against a
-    # real government ID, the tight crop (whether auto-detected or a
-    # manual crop of just the photo) scored AI-GENERATED, while the whole
-    # document correctly scored AUTHENTIC. A printed/laminated ID photo's
-    # scan/print/recompression artifacts are themselves out-of-domain for
-    # a model trained on natural camera photos vs. AI generations - cropping
-    # tightly concentrates exactly that confusing artifact instead of
-    # avoiding it. Whole-image is the empirically better input here, even
-    # though it's still an unvalidated transfer application overall (see
-    # the raised 0.72 decision threshold below).
+    # Tried CorefakeNet on the whole document image, then on an
+    # auto-detected/manually-cropped embedded photo - both tested against
+    # real government IDs (Indian PAN card) and both produced severe false
+    # positives (94% "AI-GENERATED" on an unmodified whole-image scan, and
+    # separately on a tight photo crop). CorefakeNet is trained on natural
+    # camera photos vs. AI generations; a printed/laminated ID photo's
+    # scan/print/recompression artifacts are out-of-domain for it either
+    # way, and raising the decision threshold cannot compensate for a raw
+    # score that confident. Rather than keep an actively-misleading signal,
+    # ai_generated_score now comes only from direct metadata evidence below
+    # (an explicit AI-authoring-tool EXIF tag, or a C2PA AI-generation
+    # credential) - real evidence that isn't subject to this domain
+    # mismatch. A validated document-domain classifier, trained on real
+    # ID/certificate data, is the actual fix; this repo has none.
     ai_generated_score = 0.0
-    corefakenet = reg.models.get("corefakenet")
-    if corefakenet is not None:
-        with torch.no_grad():
-            cfn_result = corefakenet.predict(img)
-        ai_generated_score = float(cfn_result["final_risk"])
 
     forensics = analyze_document_forensics(img)
     manipulation_score = forensics["manipulation_score"]

@@ -173,6 +173,21 @@ def analyze_document_forensics(pil_img: Image.Image) -> dict:
     noise_score = noise_grid_consistency(pil_img)
     cm = copy_move_score(pil_img)
 
+    # Reverted a "don't dilute a strong copy-move hit" change (max() floor
+    # instead of pure weighting): it fixed one template-generated fake ID
+    # (96 duplicate regions -> correctly flagged) but broke real IDs with
+    # a QR code. ORB-based copy-move can't distinguish "this repeats
+    # because it's a QR code/security pattern by design" from "this
+    # repeats because someone copy-pasted a region" - a clean PNG
+    # screenshot of a real Aadhaar card scored a maxed-out 1.0 (60
+    # matches, from the QR code's own crisp repeating modules) purely
+    # because it's uncompressed, while a JPEG photo of a real PAN card's
+    # own QR code barely registered (6 matches - JPEG artifacts/blur/
+    # angle make each instance slightly different). QR codes are near-
+    # universal on modern government IDs, so that false-positive is far
+    # more consequential than the one fake sample this was tuned against.
+    # Keeping copy-move at a modest 20% weight is the safer default until
+    # copy-move detection can exclude QR/barcode regions specifically.
     manipulation_score = float(np.clip(
         0.45 * ela["ela_score"]
         + 0.35 * noise_score
