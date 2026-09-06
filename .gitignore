@@ -62,3 +62,6 @@ dummy.mp4
 test_examples/
 .vercel
 .env*.local
+
+# Docs kept local
+docs/
