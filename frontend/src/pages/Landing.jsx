@@ -125,8 +125,8 @@ export default function Landing() {
     {
       icon: Image,
       title: 'Photo & Image Checker',
-      laymanDesc: 'Find out if a portrait, profile picture, or social media image was made by AI (Midjourney, Stable Diffusion, DALL-E) or altered in Photoshop.',
-      realWorldExample: 'Example: Detect fake celebrity photos or AI-generated dating profiles.',
+      laymanDesc: 'Find out whether a portrait, profile picture or social media image shows signs of AI generation or manipulation — with a heat-map of where the models looked.',
+      realWorldExample: 'Example: Screen a suspicious profile photo or a viral image before you share it.',
       tag: 'Photos & Art',
       link: '/image',
       badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
@@ -143,7 +143,7 @@ export default function Landing() {
     {
       icon: Film,
       title: 'Video Deepfake Scanner',
-      laymanDesc: 'Scan videos frame-by-frame to catch face swaps, unnatural eye blinking, lip-sync mismatch, and AI-generated video speeches.',
+      laymanDesc: 'Score a video frame by frame, see the risk timeline, and get flagged where the score jumps between frames — the pattern face swaps tend to leave.',
       realWorldExample: 'Example: Verify breaking news videos before sharing on social media.',
       tag: 'Videos & Clips',
       link: '/video',
@@ -151,28 +151,28 @@ export default function Landing() {
     },
     {
       icon: FileSearch,
-      title: 'Document & Bill Verifier',
-      laymanDesc: 'Check if official certificates, salary slips, bank receipts, or invoices have had text, dates, or signatures digitally edited.',
-      realWorldExample: 'Example: Catch falsified bills, forged certificates, and altered receipts.',
-      tag: 'PDFs & Invoices',
+      title: 'Document & Receipt Screener',
+      laymanDesc: 'Run compression and error-level analysis on a scanned document or receipt image to flag regions that may have been edited, plus Aadhaar / PAN / Voter ID number format checks. Experimental — a screening aid, not a verdict.',
+      realWorldExample: 'Example: Flag a suspicious region on a scanned receipt or certificate before you rely on it.',
+      tag: 'Scans & Receipts (images)',
       link: '/document',
       badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
     },
     {
       icon: Layers,
       title: 'All-in-One Multi-Scanner',
-      laymanDesc: 'Drop in any media file and let ProofyX automatically combine all 12 detectors to give you a single, straightforward authenticity score.',
-      realWorldExample: 'Example: Quick overall check for mixed media campaigns.',
+      laymanDesc: 'Submit an image, a video and an audio clip together. ProofyX runs the relevant detectors on each, fuses them into one score, and tells you which modalities flagged and which came back clean.',
+      realWorldExample: 'Example: Check a video and its separate audio track from the same forwarded message.',
       tag: 'Universal Scan',
       link: '/multimodal',
       badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     },
     {
       icon: ShieldAlert,
-      title: 'Official Cyber Complaint Dossier',
-      laymanDesc: 'Generate a ready-to-file legal report with tamper-proof cryptographic evidence that you can submit directly to cyber police.',
-      realWorldExample: 'Example: File police complaints for online scams and defamation.',
-      tag: 'Legal Evidence',
+      title: 'Cyber Complaint Document',
+      laymanDesc: 'Generate a complaint document in the format cybercrime.gov.in asks for, pre-filled with your analysis results and the file’s SHA-256 hash. You review it and file it yourself; ProofyX never submits on your behalf.',
+      realWorldExample: 'Example: Prepare the paperwork for a scam or impersonation complaint in minutes.',
+      tag: 'Complaint Prep',
       link: '/complaint',
       badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
     },
@@ -181,39 +181,39 @@ export default function Landing() {
   const interactiveDemos = {
     image: {
       title: 'Visual Face & Photo Deepfake Inspection',
-      subtitle: 'See how ProofyX unmasks AI face swaps and synthetic portraits in seconds.',
+      subtitle: 'See how ProofyX scores AI face swaps and synthetic portraits — and shows its evidence.',
       image: heroScanImg,
-      summary: 'Our system highlights manipulated regions with a glowing heatmap. Even if a face looks 100% natural to human eyes, our algorithm detects micro-pixel anomalies and camera sensor mismatches.',
+      summary: 'A Grad-CAM heat-map highlights the regions that drove the score. The models look for texture, frequency-domain and structural cues that generators tend to leave behind. No detector is perfect, so every result shows which models fired and how strongly.',
       highlights: [
-        '98.7% Authentic Confidence score',
-        'Facial symmetry & eye-blink verification',
-        'Detects Midjourney, Flux & FaceSwap artifacts',
+        'Trust score 0–100 with a confidence band',
+        'Grad-CAM heat-map of the suspect region',
+        'Per-model breakdown across the ensemble',
       ],
       link: '/image',
       btnText: 'Test an Image Now',
     },
     audio: {
       title: 'Voice Clone & Synthetic Audio Analysis',
-      subtitle: 'Detect ElevenLabs and AI voice clones imitating real people.',
+      subtitle: 'Detect AI voice clones imitating real people.',
       image: voiceScanImg,
-      summary: 'AI voice generators cannot replicate genuine vocal tract frequencies. Our scanner analyzes pitch contours, phase shifts, and digital vocoder noise to expose synthetic speech.',
+      summary: 'A Wav2Vec2-based classifier scores the clip for synthetic-speech patterns, with a spectrogram CNN as fallback. The upstream model reports 97.9% on its own benchmark; our independent evaluation of it is in progress, and we say so.',
       highlights: [
-        'Instant voiceprint comparison',
-        'Identifies 99.1% of AI cloned voices',
-        'Works on WhatsApp voice notes & recordings',
+        'Synthetic-speech score with confidence band',
+        'Upstream model benchmark: 97.9% (independent eval in progress)',
+        'Works on exported voice notes and recordings (WAV, MP3, FLAC, OGG, M4A)',
       ],
       link: '/audio',
       btnText: 'Test an Audio Clip',
     },
     document: {
-      title: 'Document & Certificate Tamper Detection',
-      subtitle: 'Catch digitally edited text, modified font layers, and forged stamps.',
+      title: 'Document & Receipt Screening (experimental)',
+      subtitle: 'Flag regions of a scanned document or receipt that may have been altered.',
       image: docFraudImg,
-      summary: 'When someone edits a PDF or certificate in software, the invisible metadata and font layers change. ProofyX pinpoints every modified line with precise red warning boxes.',
+      summary: 'Error-level analysis and compression checks highlight regions that differ from the rest of the page. This module uses classical image forensics rather than a trained model, so treat it as a screening aid and verify anything it flags.',
       highlights: [
-        'Flags altered text and modified dates',
-        'Validates official digital signatures',
-        'Includes SHA-256 cryptographic evidence hash',
+        'Highlights regions with inconsistent compression',
+        'Checks Aadhaar / PAN / Voter ID number formats and checksums',
+        'Includes the file’s SHA-256 hash and EXIF metadata report',
       ],
       link: '/document',
       btnText: 'Test a Document',
@@ -234,12 +234,12 @@ export default function Landing() {
     {
       icon: Briefcase,
       title: 'Businesses & HR Teams',
-      desc: 'Prevent executive impersonation fraud, verify identity documents of candidates, and ensure invoice integrity.',
+      desc: 'Screen suspected executive-impersonation media, candidate documents and invoices before they reach a decision.',
     },
     {
       icon: Scale,
       title: 'Legal & Law Enforcement',
-      desc: 'Generate court-admissible forensic dossiers with mathematical certainty and cryptographic custody chains.',
+      desc: 'Produce a documented analysis — scores, heat-map, metadata and file hash — to support a complaint or an investigator’s report. Whether it is admissible is for a court to decide.',
     },
   ];
 
@@ -247,19 +247,19 @@ export default function Landing() {
     {
       step: '1',
       title: 'Upload Any Media',
-      desc: 'Simply drag and drop any image (JPG/PNG), video (MP4), audio (WAV/MP3), or document (PDF).',
+      desc: 'Drag and drop an image (JPG, PNG, WebP), a video (MP4, MOV, MKV), an audio clip (WAV, MP3, FLAC) or a scanned document image.',
       icon: UploadCloud,
     },
     {
       step: '2',
-      title: 'Instant 2-Second Scan',
-      desc: 'Our 12 AI models inspect pixel noise, frequency spectrums, and voice biometrics in real time.',
+      title: 'Analysis on CPU',
+      desc: 'Up to 12 detection models score texture, frequency, structure and audio, and a fusion layer combines them. Images take a few seconds; videos take longer.',
       icon: Zap,
     },
     {
       step: '3',
-      title: 'Get Clear Results & Report',
-      desc: 'Receive a plain-English verdict (Real or Fake), confidence percentage, and an official report.',
+      title: 'Get Results You Can Show',
+      desc: 'A verdict (AI-generated or authentic), a confidence band, a heat-map, a per-model breakdown and a downloadable report.',
       icon: CheckCircle,
     },
   ];
@@ -267,19 +267,19 @@ export default function Landing() {
   const faqs = [
     {
       q: 'Can a regular person with no technical background use ProofyX?',
-      a: 'Yes, absolutely! ProofyX was built so that anyone can simply upload a picture, audio message, or video and get an instant, clear answer: "Genuine" or "AI Manipulated", along with an easy-to-read percentage score.',
+      a: 'Yes. Upload a picture, voice note or video and you get a clear verdict — AI-generated or authentic — with a confidence band, a percentage score and a heat-map showing what the models reacted to. Treat it as a strong signal, not proof: no detector catches everything.',
     },
     {
       q: 'How does ProofyX know if a photo or voice message is fake?',
-      a: 'Human eyes and ears can easily be fooled by high-quality AI, but computers leave behind microscopic mathematical traces. ProofyX checks for invisible digital fingerprints, abnormal sound frequencies, and pixel compression patterns that only AI tools create.',
+      a: 'Generators tend to leave patterns that people cannot see: texture and frequency-domain artefacts in images, and characteristic traces in synthesised speech. ProofyX runs several detection models trained to spot them and shows you which ones fired and how strongly. Our measured accuracy on held-out portraits is 82.5%; performance on other kinds of images is lower, and we are working on it.',
     },
     {
       q: 'What should I do if I am a victim of an AI scam or deepfake?',
-      a: 'ProofyX includes a dedicated "Cyber Complaint" feature. You can upload the scam media and click "Generate Complaint Docket" to get a standardized legal evidence document ready to submit directly to your local police or cybercrime reporting portal.',
+      a: 'Use the "Cyber Complaint" feature. Upload the media, run the analysis, and generate a complaint document in the format cybercrime.gov.in asks for, pre-filled with the results and the file hash. Review it, then file it yourself on the portal or at your local police station. ProofyX does not submit anything on your behalf.',
     },
     {
       q: 'Is my uploaded photo or audio kept private and safe?',
-      a: 'Yes, 100%. We have a strict Zero-Retention Privacy Policy. Your uploaded files are scanned in secure temporary memory and deleted immediately after the analysis. We never store, share, or use your files to train models.',
+      a: 'Your file is processed and then deleted from the server; we do not keep the media and we do not use it to train models. The analysis result — scores, verdict, file name and extracted metadata such as EXIF — is saved to your history so you can come back to it.',
     },
   ];
 
@@ -408,18 +408,18 @@ export default function Landing() {
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-100/90 border border-purple-300/70 text-purple-900 text-xs font-bold w-fit shadow-xs">
                 <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 <Sparkles size={13} className="text-purple-600" />
-                <span>Instant AI & Deepfake Verification</span>
+                <span>AI &amp; Deepfake Media Forensics</span>
               </div>
 
               {/* Main Heading - Layman Friendly */}
               <h1 className="text-4xl sm:text-5xl lg:text-5xl xl:text-6xl font-black tracking-tight leading-[1.08] text-slate-950 font-display">
                 Is It Real or AI? <br />
-                <span className="lp-gradient-text">Verify Any Media</span> In Seconds.
+                <span className="lp-gradient-text">Get Evidence,</span> Not a Guess.
               </h1>
 
               {/* Subheading - Crystal Clear */}
               <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-xl">
-                Protect yourself from voice clone scams, fake photos, altered videos, and forged documents. ProofyX scans any file and tells you with mathematical clarity if it was created or manipulated by AI.
+                Check suspicious photos, voice notes, videos and scanned documents. ProofyX returns a trust score, a heat-map of the suspect region and a per-model breakdown — a strong signal you can act on, not a black-box yes or no.
               </p>
 
               {/* Action Buttons */}
@@ -443,8 +443,8 @@ export default function Landing() {
                     <CheckCircle2 size={18} />
                   </div>
                   <div className="text-xs">
-                    <div className="font-bold text-slate-900">99.4% Accurate</div>
-                    <div className="text-slate-500 text-[11px]">Instant detection</div>
+                    <div className="font-bold text-slate-900">82.5% measured</div>
+                    <div className="text-slate-500 text-[11px]">CorefakeNet, 332 held-out portraits</div>
                   </div>
                 </div>
 
@@ -453,8 +453,8 @@ export default function Landing() {
                     <Lock size={16} />
                   </div>
                   <div className="text-xs">
-                    <div className="font-bold text-slate-900">100% Private</div>
-                    <div className="text-slate-500 text-[11px]">Zero file storage</div>
+                    <div className="font-bold text-slate-900">Files not kept</div>
+                    <div className="text-slate-500 text-[11px]">Deleted after analysis; results saved to your history</div>
                   </div>
                 </div>
 
@@ -463,8 +463,8 @@ export default function Landing() {
                     <Zap size={16} />
                   </div>
                   <div className="text-xs">
-                    <div className="font-bold text-slate-900">&lt; 2 Seconds</div>
-                    <div className="text-slate-500 text-[11px]">Fast scan speed</div>
+                    <div className="font-bold text-slate-900">Runs on CPU</div>
+                    <div className="text-slate-500 text-[11px]">~0.6 s model pass; a few seconds per image end to end</div>
                   </div>
                 </div>
               </div>
@@ -893,7 +893,7 @@ export default function Landing() {
                 Stop Guessing. Verify Authenticity Now.
               </h2>
               <p className="text-purple-200 text-sm sm:text-base leading-relaxed">
-                Check any suspicious photo, voice clip, deepfake video, or invoice in under 2 seconds.
+                Check a suspicious photo, voice clip, video or scanned receipt in a few seconds — with the evidence attached.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4">
                 <Link
@@ -926,11 +926,11 @@ export default function Landing() {
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-500 max-w-sm leading-relaxed mb-4">
-                The world’s easiest and most accurate AI deepfake & authenticity checker. Making digital truth accessible to everyone.
+                An explainable media-forensics engine for images, video and audio, built at B.S. Abdur Rahman Crescent Institute. Every score comes with its evidence.
               </p>
               <div className="flex items-center gap-2 text-xs text-purple-700 font-semibold font-mono">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>12 Forensic Verification Models Operational</span>
+                <span>Up to 12 detection models, loaded per deployment</span>
               </div>
             </div>
 
@@ -963,9 +963,9 @@ export default function Landing() {
           <div className="pt-6 border-t border-purple-200/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
             <div>© {new Date().getFullYear()} ProofyX Technologies. All rights reserved.</div>
             <div className="flex items-center gap-6">
-              <span className="hover:text-purple-700 cursor-pointer">Privacy Guarantee</span>
+              <span className="hover:text-purple-700 cursor-pointer">Privacy</span>
               <span className="hover:text-purple-700 cursor-pointer">Terms of Service</span>
-              <span className="hover:text-purple-700 cursor-pointer">Zero-Retention Policy</span>
+              <span className="hover:text-purple-700 cursor-pointer">Data Retention</span>
             </div>
           </div>
         </div>
