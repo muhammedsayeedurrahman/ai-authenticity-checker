@@ -33,15 +33,17 @@ plt.rcParams.update({
     "xtick.color": MUTED,
     "ytick.color": MUTED,
     "axes.edgecolor": GRID,
-    "figure.facecolor": BG,
-    "axes.facecolor": BG,
-    "savefig.facecolor": BG,
+    "figure.facecolor": "none",
+    "axes.facecolor": "none",
+    "savefig.facecolor": "none",
 })
 
 
 def _save(fig, name):
+    """Transparent PNG so the figure sits on the slide's gradient rather than
+    punching a flat rectangle of BG through it."""
     fig.savefig(OUT / name, dpi=200, bbox_inches="tight", pad_inches=0.12,
-                facecolor=BG)
+                transparent=True)
     plt.close(fig)
     print("wrote", name)
 
@@ -155,17 +157,25 @@ def revenue_projection():
 
 
 def detection_gap():
-    """The problem in one bar: people cannot do this job."""
-    fig, ax = plt.subplots(figsize=(6.6, 3.4))
-    labels = ["Human reviewers\n(iProov, 2024)",
-              "ProofyX CorefakeNet\n(332 held-out samples)"]
-    vals = [0.1, 82.5]
-    bars = ax.barh(labels, vals, height=0.46, color=[MAGENTA, TEAL], alpha=0.92)
+    """The confidence gap, from the iProov study (2,000 UK/US consumers, 2025).
+
+    An earlier version of this chart put iProov's 0.1% next to ProofyX's 82.5%
+    on a shared accuracy axis. That was a category error: the 0.1% is the share
+    of *people* who classified every item correctly, not per-item accuracy, so
+    the two numbers do not share a unit. This version compares only the two
+    figures from the same study, which do.
+    """
+    fig, ax = plt.subplots(figsize=(6.8, 3.4))
+    labels = ["Believe they could\nspot a deepfake",
+              "Actually identified every\nreal and fake item"]
+    vals = [60.0, 0.1]
+    bars = ax.barh(labels, vals, height=0.46, color=[VIOLET, MAGENTA], alpha=0.92)
     for bar, val in zip(bars, vals):
-        ax.text(val + 2.4, bar.get_y() + bar.get_height() / 2, f"{val}%",
-                va="center", fontsize=19, fontweight="bold", color=CREAM)
+        ax.text(val + 2.4, bar.get_y() + bar.get_height() / 2,
+                f"{val:g}%", va="center", fontsize=19, fontweight="bold",
+                color=CREAM)
     ax.set_xlim(0, 100)
-    ax.set_xlabel("Accuracy at flagging manipulated media (%)", fontsize=10)
+    ax.set_xlabel("Share of 2,000 UK and US consumers tested (%)", fontsize=10)
     ax.tick_params(labelsize=11)
     ax.grid(axis="x", color=GRID, lw=0.8)
     ax.set_axisbelow(True)

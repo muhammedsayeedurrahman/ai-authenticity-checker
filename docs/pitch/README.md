@@ -50,6 +50,31 @@ Speaker notes with timings are on every slide.
 5. **Slide 11 — have the spreadsheet ready.** The chart is a projection. If an
    investor asks for the model, do not improvise; send the file.
 
+## Metrics audit (verified against sources)
+
+Every figure in the deck was checked against its cited source. Two did not
+survive, and both were corrected.
+
+| Claim | Verdict | Action |
+|-------|---------|--------|
+| $3B+ US deepfake fraud losses, Jan-Sep 2025 | **Failed.** The research doc cites a Security Magazine article whose own headline is "more than $200 million". Independent sources put US 2025 deepfake fraud at roughly $712M-$1.1B, never $3B. | Replaced with the FBI IC3 2025 report: **$893M across 22,364 AI-fraud complaints** - authoritative and checkable. |
+| 0.1% human detection accuracy (iProov) | **Failed as used.** The 0.1% is the share of *people* who classified every item correctly, not per-item accuracy. The old chart put it on a shared accuracy axis against ProofyX's 82.5%, which compares two different units. | Chart rebuilt as the **confidence gap**: 60% believe they could spot a deepfake, 0.1% got every item right - both from the same study, so the comparison is valid. |
+| 8M deepfake files by end-2025, up from 500K in 2023 | Verified. | Kept. |
+| $280K average loss per incident | Verified, but attributed to an aggregator. | Re-attributed to the **IRONSCALES Fall 2025 Threat Report** (survey of 500 IT professionals), the study that produced it. |
+| Market $170M (2025) to $5.6B (2034), 47.6% CAGR | Consistent with the cited Market.us research. | Kept. |
+| CorefakeNet 82.5% acc / 90.9% ROC-AUC / F1 81.3 on 332 held-out samples | Matches the recorded evaluation run. | Kept, scoped to CorefakeNet on the validation slide. |
+| 564 ms/image, 4.9x faster than the ensemble | Matches the benchmark run. Note `docs/PROOFYX_COMPLETE_ANALYSIS.md` claims "7x" in three places - that is the design target, not the measured result. | Deck uses the measured 4.9x. **Worth correcting the research doc.** |
+| Wav2Vec2 97.9% | Upstream model card, not our measurement. | Labelled as such on the validation slide. |
+
+Two things still worth doing:
+
+1. **Commit an evaluation artifact.** The CorefakeNet numbers are real but there
+   is no results file in the repo, so "reproducible" currently means "re-run the
+   harness", not "open this JSON". Slide 15 is worded accordingly, but a
+   committed results file would be stronger in diligence.
+2. **Fix the 7x claim** in `docs/PROOFYX_COMPLETE_ANALYSIS.md` so the research
+   file and the deck agree.
+
 ## Claims that are deliberately hedged
 
 These are labelled on the slides. Do not "upgrade" them in a later edit:

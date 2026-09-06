@@ -17,7 +17,9 @@ from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml.ns import qn
 from pptx.util import Emu, Inches, Pt
+from lxml import etree
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "docs" / "pitch" / "assets"
@@ -25,6 +27,8 @@ OUT = ROOT / "docs" / "pitch" / "ProofyX_Investor_Deck.pptx"
 
 # --- palette, sampled from the original deck -------------------------------
 DEEP = RGBColor(0x0E, 0x04, 0x2D)
+DEEP_LO = RGBColor(0x08, 0x02, 0x1C)   # gradient far corner
+DEEP_HI = RGBColor(0x1A, 0x0C, 0x42)   # gradient near corner
 PANEL = RGBColor(0x1C, 0x12, 0x3F)
 PANEL2 = RGBColor(0x2A, 0x21, 0x45)
 CREAM = RGBColor(0xFF, 0xF6, 0xED)
@@ -36,21 +40,77 @@ MAGENTA = RGBColor(0xFF, 0x4D, 0x9D)
 AMBER = RGBColor(0xFF, 0xB0, 0x20)
 
 FONT = "Segoe UI"
-DATE = "August 8, 2026"
 
 SW, SH = Inches(13.333), Inches(7.5)
 ML = Inches(0.62)          # left margin
 CONTENT_W = SW - 2 * ML
 
 
+# --- raw-XML effects python-pptx has no API for ----------------------------
+def _sub(parent, tag, **attrs):
+    el = etree.SubElement(parent, qn(tag))
+    for k, v in attrs.items():
+        el.set(k, str(v))
+    return el
+
+
+def soft_fill(shape, colour, alpha_pct, blur_in=0.0):
+    """Solid fill at partial opacity, optionally with a soft (blurred) edge.
+
+    Used for the ambient colour washes behind content. python-pptx exposes
+    neither alpha nor softEdge, so both are written into the shape's spPr.
+    """
+    spPr = shape._element.spPr
+    for tag in ("a:solidFill", "a:gradFill", "a:noFill", "a:blipFill"):
+        existing = spPr.find(qn(tag))
+        if existing is not None:
+            spPr.remove(existing)
+
+    fill = etree.SubElement(spPr, qn("a:solidFill"))
+    clr = _sub(fill, "a:srgbClr", val=f"{colour[0]:02X}{colour[1]:02X}{colour[2]:02X}")
+    _sub(clr, "a:alpha", val=int(alpha_pct * 1000))
+    # solidFill must precede ln/effectLst in spPr's schema order.
+    ln = spPr.find(qn("a:ln"))
+    if ln is not None:
+        spPr.remove(ln)
+        spPr.append(ln)
+    if blur_in:
+        effects = etree.SubElement(spPr, qn("a:effectLst"))
+        _sub(effects, "a:softEdge", rad=int(Inches(blur_in)))
+    shape.line.fill.background()
+    shape.shadow.inherit = False
+    return shape
+
+
+def glow(slide, cx, cy, diameter, colour, alpha_pct=14, blur_in=0.9):
+    """Ambient light bloom, centred on (cx, cy). Purely decorative."""
+    d = Inches(diameter)
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.OVAL, int(cx - d / 2), int(cy - d / 2), d, d)
+    return soft_fill(shape, colour, alpha_pct, blur_in)
+
+
 # --- primitives ------------------------------------------------------------
-def new_slide(prs):
+def new_slide(prs, bloom=True):
+    """Gradient ground plus an optional violet/teal bloom, so no slide is a
+    flat rectangle of colour behind the content."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, SW, SH)
-    bg.fill.solid()
-    bg.fill.fore_color.rgb = DEEP
+    bg.fill.gradient()
+    bg.fill.gradient_angle = 315.0
+    stops = bg.fill.gradient_stops
+    stops[0].color.rgb = DEEP_HI
+    stops[0].position = 0.0
+    stops[1].color.rgb = DEEP_LO
+    stops[1].position = 1.0
     bg.line.fill.background()
     bg.shadow.inherit = False
+
+    if bloom:
+        glow(slide, Inches(12.4), Inches(0.1), 8.6, VIOLET, alpha_pct=11,
+             blur_in=2.2)
+        glow(slide, Inches(-0.2), Inches(7.7), 7.0, TEAL, alpha_pct=7,
+             blur_in=2.0)
     return slide
 
 
@@ -85,11 +145,24 @@ def textbox(slide, x, y, w, h, runs, align=PP_ALIGN.LEFT,
     return box
 
 
-def card(slide, x, y, w, h, fill=None, outline=CREAM, radius=0.06, line_w=1.1):
+def card(slide, x, y, w, h, fill=None, outline=CREAM, radius=0.06, line_w=1.1,
+         gradient=True):
+    """Rounded surface. Filled cards get a top-lit gradient by default, which
+    stops a grid of them reading as flat swatches."""
     shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
     shape.adjustments[0] = radius
     if fill is None:
         shape.fill.background()
+    elif gradient:
+        shape.fill.gradient()
+        shape.fill.gradient_angle = 270.0
+        stops = shape.fill.gradient_stops
+        stops[0].color.rgb = RGBColor(min(fill[0] + 14, 255),
+                                      min(fill[1] + 12, 255),
+                                      min(fill[2] + 20, 255))
+        stops[0].position = 0.0
+        stops[1].color.rgb = fill
+        stops[1].position = 1.0
     else:
         shape.fill.solid()
         shape.fill.fore_color.rgb = fill
@@ -130,14 +203,24 @@ def pill(slide, x, y, text, w=None, fill=None, outline=CREAM, colour=CREAM,
     return shape
 
 
+def rule(slide, x, y, w, colour=TEAL, thickness=3.0):
+    """Short accent bar. Anchors a headline without adding another box."""
+    bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w,
+                                 Pt(thickness))
+    bar.adjustments[0] = 0.5
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = colour
+    bar.line.fill.background()
+    bar.shadow.inherit = False
+    return bar
+
+
 def chrome(slide, section):
-    """Logo, section chip and date pill — the furniture on every content slide."""
+    """Logo, section chip and accent rule — the furniture on content slides."""
     slide.shapes.add_picture(str(ASSETS / "logo_white.png"),
                              Inches(0.42), Inches(0.24), height=Inches(0.86))
     pill(slide, Inches(2.55), Inches(0.40), section.upper(),
          fill=None, outline=VIOLET, colour=CREAM, size=10.5)
-    pill(slide, SW - Inches(2.30), Inches(0.40), DATE, w=Inches(1.72),
-         fill=None, outline=CREAM, colour=CREAM, size=11)
 
 
 def heading(slide, light, bold=None, y=1.02, size=40):
@@ -163,7 +246,9 @@ def heading(slide, light, bold=None, y=1.02, size=40):
     return box
 
 
-def kicker(slide, text, y=1.86, colour=MUTED, size=13.5, w=None):
+def kicker(slide, text, y=1.86, colour=MUTED, size=13.5, w=None, bar=True):
+    if bar:
+        rule(slide, ML, Inches(y - 0.19), Inches(1.05))
     return textbox(slide, ML, Inches(y), w or CONTENT_W, Inches(0.5),
                    [(text, size, colour, False)], line=1.3)
 
@@ -278,7 +363,6 @@ def s01_title(prs):
     s = new_slide(prs)
     s.shapes.add_picture(str(ASSETS / "logo_white.png"),
                          Inches(0.42), Inches(0.24), height=Inches(1.30))
-    pill(s, SW - Inches(2.30), Inches(0.44), DATE, w=Inches(1.72))
 
     textbox(s, ML, Inches(1.80), Inches(11.0), Inches(1.5),
             [("ProofyX", 92, CREAM, True)])
@@ -312,7 +396,7 @@ def s02_problem(prs):
 
     tiles = [
         ("8M+", "Deepfake files in circulation in 2025,\nup from 500K in 2023", MAGENTA),
-        ("$3B+", "Lost to deepfake-enabled fraud in the US,\nJanuary to September 2025", MAGENTA),
+        ("$893M", "AI-enabled fraud losses logged by the FBI\nin 2025, across 22,364 complaints", MAGENTA),
         ("$280K", "Average loss per single\ndeepfake fraud incident", AMBER),
     ]
     y = Inches(2.52)
@@ -325,8 +409,13 @@ def s02_problem(prs):
             [("Detection is now a compliance problem, not a curiosity. "
               "Banks, newsrooms and courts need an answer they can put in a file.",
               11, CREAM, False)], line=1.3)
-    notes(s, "35s. Lead with the human number on the right: people catch one in "
-             "a thousand. Then the money. Land on: this is already a booked "
+    textbox(s, Inches(6.95), Inches(5.86), Inches(5.75), Inches(0.6),
+            [("iProov tested 2,000 UK and US consumers on real and fake media. "
+              "Six in ten backed themselves; one in a thousand got every item "
+              "right.", 10, MUTED, False)], line=1.28)
+    notes(s, "35s. Lead with the confidence gap on the right: people are sure "
+             "they can tell, and they cannot. Then the money. Land on: this is "
+             "already a booked "
              "loss line, not a future risk.")
     return s
 
@@ -861,7 +950,6 @@ def s14_contact(prs):
         y += Inches(0.55)
 
     pill(s, ML, Inches(6.62), "Investor Pitch Deck", w=Inches(2.05))
-    pill(s, ML + Inches(2.20), Inches(6.62), DATE, w=Inches(1.72))
     notes(s, "10s. Close on the ask, not on 'thank you'. Placeholders on this "
              "slide MUST be replaced before the deck leaves the room.")
     return s
@@ -876,10 +964,10 @@ def s15_sources(prs):
 
     groups = [
         ("Threat statistics", [
-            "8M+ deepfake files — Bright Defense",
-            "$3B+ US losses, 2025 — Security Magazine",
-            "$280K average incident — DeepStrike",
-            "0.1% human accuracy — iProov",
+            "8M deepfake files by end-2025 — Bright Defense",
+            "$893M AI-fraud losses, 22,364 cases — FBI IC3 2025",
+            "$280K average incident — IRONSCALES, Fall 2025",
+            "60% confident, 0.1% perfect — iProov, Feb 2025",
         ], MAGENTA),
         ("Market sizing", [
             "$170M to $5.6B, 47.6% CAGR — Market.us",
@@ -904,19 +992,21 @@ def s15_sources(prs):
     w = (CONTENT_W - 3 * gap) / 4
     x = ML
     for title, items, accent in groups:
-        card(s, x, Inches(2.30), w, Inches(4.28), fill=PANEL, outline=accent,
+        card(s, x, Inches(2.30), w, Inches(3.05), fill=PANEL, outline=accent,
              line_w=1.2)
         textbox(s, x + Inches(0.22), Inches(2.48), w - Inches(0.44),
                 Inches(0.34), [(title.upper(), 10, accent, True)])
         runs = [(f"·  {item}", 10.5, MUTED, False) for item in items]
-        textbox(s, x + Inches(0.22), Inches(2.90), w - Inches(0.44),
-                Inches(3.5), runs, line=1.3, space_after=7)
+        textbox(s, x + Inches(0.22), Inches(2.88), w - Inches(0.44),
+                Inches(2.30), runs, line=1.3, space_after=6)
         x += w + gap
 
-    textbox(s, ML, Inches(6.72), CONTENT_W, Inches(0.4),
-            [("ProofyX measured results are reproducible from this repository: "
-              "scripts/make_pitch_figures.py regenerates every chart in this deck "
-              "from the recorded evaluation runs.", 10, MUTED, False)], line=1.25)
+    textbox(s, ML, Inches(5.62), CONTENT_W, Inches(0.6),
+            [("Every chart is regenerated by scripts/make_pitch_figures.py. "
+              "ProofyX accuracy and latency figures come from the CorefakeNet "
+              "evaluation run on 332 held-out samples; the eval harness is in "
+              "the repository and the run is repeatable on request.",
+              10, MUTED, False)], line=1.25)
     notes(s, "Appendix. Do not present unless asked. Hand this slide over when "
              "an investor questions a figure.")
     return s
