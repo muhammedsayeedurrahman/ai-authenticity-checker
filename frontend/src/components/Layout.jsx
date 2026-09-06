@@ -31,6 +31,7 @@ const NAV_LINKS = [
   { to: '/image',      label: 'Image AI',       icon: ImageIcon },
   { to: '/audio',      label: 'Audio Voice',    icon: Mic },
   { to: '/video',      label: 'Video Deepfake', icon: Film },
+  { to: '/document',   label: 'Document',       icon: FileSearch },
   { to: '/multimodal', label: 'Multimodal',     icon: Layers },
   { to: '/history',    label: 'History',        icon: Clock },
 ];

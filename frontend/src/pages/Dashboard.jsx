@@ -19,6 +19,7 @@ const ANALYSIS_CARDS = [
   { to: '/image', label: 'Image AI Forensics', desc: 'Synthetic portrait & pixel manipulation', icon: Image },
   { to: '/audio', label: 'Audio Voice Biometrics', desc: 'Voice clone & spectral vocoder traces', icon: Mic },
   { to: '/video', label: 'Video Deepfake Scan', desc: 'Temporal consistency & frame analysis', icon: Film },
+  { to: '/document', label: 'Document Forensics', desc: 'Tampering, ELA & ID checksum verification', icon: FileSearch },
   { to: '/multimodal', label: 'Multimodal Fusion', desc: 'Cross-modal audio-visual confidence matrix', icon: Layers },
 ];
 

@@ -29,6 +29,7 @@ it can never break the analysis it's attached to.
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 from typing import Any, Optional
 
@@ -73,11 +74,16 @@ def reverse_image_search(
     except ImportError:
         return {**empty, "available": True, "error": "requests library not installed"}
 
+    # The API docs require the image part to carry a Content-Type of a
+    # recognized image MIME type — a bare (filename, bytes) 2-tuple leaves
+    # it unset, which Bing may reject or silently mishandle.
+    content_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
+
     try:
         response = requests.post(
             _BING_VISUAL_SEARCH_URL,
             headers={"Ocp-Apim-Subscription-Key": api_key},
-            files={"image": (filename, image_bytes)},
+            files={"image": (filename, image_bytes, content_type)},
             timeout=_REQUEST_TIMEOUT_SEC,
         )
         response.raise_for_status()
