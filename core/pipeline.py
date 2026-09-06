@@ -1108,7 +1108,20 @@ def analyze_document(
 
     img = image_pil.convert("RGB")
 
-    # Generic AI-generation signal (whole image, no face crop)
+    # Generic AI-generation signal (whole image, no face crop).
+    #
+    # Tried cropping to an auto-detected embedded photo here on the theory
+    # that CorefakeNet (portrait-trained) would score more accurately on a
+    # face-like input than a whole document. Reverted: tested against a
+    # real government ID, the tight crop (whether auto-detected or a
+    # manual crop of just the photo) scored AI-GENERATED, while the whole
+    # document correctly scored AUTHENTIC. A printed/laminated ID photo's
+    # scan/print/recompression artifacts are themselves out-of-domain for
+    # a model trained on natural camera photos vs. AI generations - cropping
+    # tightly concentrates exactly that confusing artifact instead of
+    # avoiding it. Whole-image is the empirically better input here, even
+    # though it's still an unvalidated transfer application overall (see
+    # the raised 0.72 decision threshold below).
     ai_generated_score = 0.0
     corefakenet = reg.models.get("corefakenet")
     if corefakenet is not None:
@@ -1173,7 +1186,17 @@ def analyze_document(
     risk_score = max(ai_generated_score, manipulation_score)
     confidence_enum = Confidence.from_risk_score(risk_score)
 
-    ai_generated_likely = ai_generated_score >= 0.60
+    # 0.60 is the calibrated threshold for CorefakeNet on its trained
+    # domain (portraits). Applied blind to whole documents it is an
+    # unvalidated transfer signal that misfires on genuine IDs/certificates
+    # - holograms, lamination glare, and dense printed text read as
+    # synthesis artifacts to a face-trained model. Raising the bar to 0.72
+    # (still below the 0.75/0.90 EXIF/C2PA boosts above, which are direct
+    # evidence and should keep triggering on their own) cuts obvious false
+    # positives on genuine documents without needing retraining data this
+    # repo doesn't have. Still a mitigation, not a fix - a document-domain
+    # classifier trained on real ID/certificate data is the real fix.
+    ai_generated_likely = ai_generated_score >= 0.72
     manipulation_likely = manipulation_score >= 0.60
 
     # The generic binary Verdict enum (AUTHENTIC/AI-GENERATED) can't
