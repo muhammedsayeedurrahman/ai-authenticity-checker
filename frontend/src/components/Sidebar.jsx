@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image, Film, Mic, FileSearch, Layers, LayoutDashboard, Clock, Activity, ShieldAlert, ShieldCheck, LogOut } from 'lucide-react';
 import useForensicStore from '../store/useForensicStore';
@@ -44,7 +44,9 @@ function SidebarLink({ to, exact, icon: Icon, label, onClick, showLabel }) {
       to={to}
       end={exact}
       title={label}
-      className={({ isActive }) => `nav-item w-full group ${isActive ? 'active' : ''}`}
+      className={({ isActive }) =>
+        `nav-item w-full group ${isActive ? 'active' : ''} ${showLabel ? '' : 'justify-center gap-0 px-0'}`
+      }
       onClick={onClick}
     >
       {({ isActive }) => (
@@ -52,7 +54,7 @@ function SidebarLink({ to, exact, icon: Icon, label, onClick, showLabel }) {
           {isActive && (
             <motion.span
               layoutId="sidebar-active"
-              className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-accent shadow-glow-blue"
+              className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-accent shadow-[0_0_8px_rgba(109,40,217,0.6)]"
               transition={{ type: 'spring', stiffness: 350, damping: 30 }}
             />
           )}
@@ -118,7 +120,7 @@ export default function Sidebar({ open = true, onClose = () => {} }) {
       </AnimatePresence>
 
       <motion.aside
-        className="flex flex-col h-screen fixed left-0 top-0 z-50 bg-[rgba(12,15,22,0.95)] backdrop-blur-xl border-r border-border-dim overflow-hidden"
+        className="flex flex-col h-screen fixed left-0 top-0 z-50 bg-white/90 backdrop-blur-xl border-r border-purple-200/60 shadow-xl shadow-purple-900/5 overflow-hidden"
         animate={{ x: visible ? 0 : '-100%', width }}
         transition={{ type: 'spring', stiffness: 300, damping: 32 }}
         onMouseEnter={() => isDesktop && setIsExpanded(true)}
@@ -126,19 +128,26 @@ export default function Sidebar({ open = true, onClose = () => {} }) {
         onFocusCapture={() => isDesktop && setIsExpanded(true)}
         onBlurCapture={handleBlurCapture}
       >
-        {/* Brand */}
-        <div className="px-4 pt-5 pb-4 flex items-center gap-2.5">
+        {/* Brand — links back to the marketing landing page. justify-center
+            (collapsed) instead of gap-2.5 (expanded): a gap persists even
+            when the label's width animates to 0, which off-centers the
+            logo in the collapsed rail if left in place unconditionally. */}
+        <Link
+          to="/"
+          className={`pt-5 pb-4 flex items-center group ${showLabel ? 'px-4 gap-2.5' : 'justify-center px-0'}`}
+          title="ProofyX Home"
+        >
           <img
             src={logo}
             alt="ProofyX"
-            className="w-7 h-7 rounded-lg flex-shrink-0 object-cover transition-transform duration-150 hover:scale-105"
+            className="w-7 h-7 rounded-lg flex-shrink-0 object-cover ring-2 ring-purple-300/60 transition-transform duration-150 group-hover:scale-105"
           />
           <SidebarLabel showLabel={showLabel}>
             <span className="text-sm font-bold tracking-[0.08em] uppercase gradient-text font-display">
               PROOFYX
             </span>
           </SidebarLabel>
-        </div>
+        </Link>
 
         <div className="mx-4 mb-3 divider" />
 
@@ -168,7 +177,7 @@ export default function Sidebar({ open = true, onClose = () => {} }) {
                 onClick={signOut}
                 title="Sign out"
                 aria-label="Sign out"
-                className="p-1 rounded transition-colors ml-2 flex-shrink-0 hover:bg-white/5 text-text-3"
+                className="p-1 rounded transition-colors ml-2 flex-shrink-0 hover:bg-purple-100 text-text-3"
               >
                 <LogOut size={13} />
               </button>

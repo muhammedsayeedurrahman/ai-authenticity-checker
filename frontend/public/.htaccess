@@ -1,0 +1,23 @@
+# Single-page app routing: serve index.html for any request that isn't a
+# real file or directory, so client-side routes (e.g. /dashboard, /image)
+# don't 404 on a direct load or refresh. Equivalent to vercel.json's
+# rewrites rule for the Vercel deployment.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# Long-lived caching for hashed build assets (filenames change on every
+# build, so it's always safe to cache them indefinitely).
+<IfModule mod_headers.c>
+  <FilesMatch "^assets/.*\.(js|css|woff2?)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "DENY"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

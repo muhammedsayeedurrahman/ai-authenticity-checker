@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+Allow: /image
+Allow: /video
+Allow: /audio
+Allow: /document
+Allow: /multimodal
+Disallow: /dashboard
+Disallow: /history
+Disallow: /system
+Disallow: /complaint
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+
+Sitemap: https://proofyx.unaux.com/sitemap.xml

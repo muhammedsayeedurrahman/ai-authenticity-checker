@@ -1,0 +1,22 @@
+# ProofyX
+
+> ProofyX is a free, web-based AI deepfake and media authenticity checker. Upload an image, video, audio clip, or document and get an instant Real-vs-AI-Generated verdict with a confidence score.
+
+## What it detects
+- AI-generated or Photoshopped images (Midjourney, Stable Diffusion, DALL-E, FaceSwap)
+- Deepfake videos (face swaps, lip-sync mismatch, unnatural blinking)
+- AI voice clones and synthetic speech (ElevenLabs, Bark, Tortoise, vocoder artifacts)
+- Digitally tampered or forged documents, IDs, and certificates (splices, copy-move edits, metadata inconsistencies)
+- Combined multimodal analysis when multiple file types are uploaded together
+
+## How it works
+ProofyX runs an ensemble of neural network models (Vision Transformer, DINOv2, frequency-domain/FFT analysis, facial biometrics, CLIP-based deepfake detection, Wav2Vec2 for audio) alongside classical forensic techniques (Error Level Analysis, noise-consistency checks, copy-move detection, EXIF/C2PA metadata inspection) to produce a single risk score and plain-language verdict.
+
+## Key facts
+- Free to use, no signup required for scanning
+- Zero-retention privacy policy — uploaded files are deleted immediately after analysis, never stored or used for training
+- Includes a "Cyber Complaint" feature that generates a legal evidence document for reporting AI scams to police/cybercrime authorities
+- Scan tools: /image, /video, /audio, /document, /multimodal
+
+## Homepage
+https://proofyx.unaux.com/
