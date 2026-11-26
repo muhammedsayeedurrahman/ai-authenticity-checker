@@ -159,8 +159,6 @@ class TestDeliveryQueue:
         assert not any(d["id"] == delivery["id"] for d in due)
 
     async def test_mark_retry_schedules_future_attempt(self):
-        from datetime import datetime, timezone
-
         from db.webhook_repo import WebhookRepository
 
         repo = WebhookRepository()

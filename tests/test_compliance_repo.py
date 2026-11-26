@@ -113,12 +113,11 @@ class TestSlaRepository:
         assert clock["status"] == "running"
 
     async def test_close_clock_before_deadline_is_met(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
 
         from db.compliance_repo import SlaRepository
 
         repo = SlaRepository()
-        future_due = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
         clock = await repo.open_clock(
             org_id="org-1", content_label_id="label-1",
             started_at=datetime.now(timezone.utc).isoformat(), deadline_seconds=3600,
@@ -148,8 +147,6 @@ class TestSlaRepository:
         assert await repo.close_clock("does-not-exist", action="removed") is None
 
     async def test_reclosing_an_already_resolved_clock_raises_and_does_not_overwrite(self):
-        from datetime import datetime, timedelta, timezone
-
         from db.compliance_repo import SlaClockAlreadyResolved, SlaRepository
 
         repo = SlaRepository()
